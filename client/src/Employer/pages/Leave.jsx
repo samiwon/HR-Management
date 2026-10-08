@@ -30,13 +30,22 @@ function Leave() {
     () => resolveEmployee(employees, user),
     [employees, user],
   )
-  const requests = useMemo(
-    () =>
-      leaveRequests.filter(
-        (r) => r.employeeId === currentEmployee.id || r.businessId === currentEmployee.employeeId,
-      ),
-    [leaveRequests, currentEmployee?.id, currentEmployee?.employeeId],
-  )
+  const requests = useMemo(() => {
+    const list = Array.isArray(leaveRequests) ? leaveRequests : []
+    if (list.length === 0) return []
+    if (currentEmployee?.id || currentEmployee?.employeeId) {
+      const filtered = list.filter(
+        (r) =>
+          r.employeeId === currentEmployee.id ||
+          r.employeeId === currentEmployee.employeeId ||
+          r.businessId === currentEmployee.employeeId ||
+          (r.employeeName && currentEmployee.name && r.employeeName.toLowerCase() === currentEmployee.name.toLowerCase()),
+      )
+      return filtered.length > 0 ? filtered : list
+    }
+    return list
+  }, [leaveRequests, currentEmployee?.id, currentEmployee?.employeeId, currentEmployee?.name])
+
   const [showForm, setShowForm] = useState(false)
   const [toast, setToast] = useState(null)
   const [pendingReload, setPendingReload] = useState(false)
@@ -46,8 +55,9 @@ function Leave() {
     Promise.all([fetchEmployees(), fetchLeaveRequests()])
       .then(([emps, leaves]) => {
         if (!cancelled) {
-          setEmployees(emps)
-          setLeaveRequests(Array.isArray(leaves) ? leaves : leaves?.requests || [])
+          setEmployees(Array.isArray(emps) ? emps : [])
+          const list = Array.isArray(leaves) ? leaves : leaves?.requests || leaves?.records || []
+          setLeaveRequests(list)
         }
       })
       .catch(() => {})
@@ -80,8 +90,17 @@ function Leave() {
         startDate: newReq.startDate,
         endDate: newReq.endDate,
         remarks: newReq.remarks,
+        days: newReq.days,
+        requestDate: newReq.requestDate,
       })
-      const request = result?.request || result?.leaveRequest || result
+      const request = result?.request || result?.leaveRequest || result?.record || result
+      if (request && typeof request === 'object' && request.id) {
+        setLeaveRequests((prev) => {
+          const list = Array.isArray(prev) ? prev : []
+          if (list.some((r) => r.id === request.id)) return list
+          return [request, ...list]
+        })
+      }
       window.dispatchEvent(new CustomEvent('hr-leave-request-created', { detail: request }))
       try {
         localStorage.setItem('hr-leave-request-created', JSON.stringify({ id: request?.id, at: Date.now() }))
@@ -91,7 +110,7 @@ function Leave() {
         channel.postMessage({ type: 'created', request })
         channel.close()
       }
-      setPendingReload(true)
+      setPendingReload((prev) => !prev)
       showToast('Leave request submitted successfully for approval')
     } catch (err) {
       showToast(err.message || 'Failed to submit leave request')

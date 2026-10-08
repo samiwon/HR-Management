@@ -107,11 +107,11 @@ const DEFAULT_SETTINGS = {
   },
 
   companyInformation: {
-    companyName: 'Your Company Name PLC',
+    companyName: 'Yanol Technology PLC',
     address: 'Bole Sub-City, Addis Ababa, Ethiopia',
-    phone: '+251-11-000-0000',
-    email: 'hr@yourcompany.com',
-    logo: '[Insert Company Logo Here]',
+    phone: '+251 11 662 4589',
+    email: 'hr@yanol.com',
+    logo: '',
   },
 
   accessPermissions: {
@@ -218,6 +218,26 @@ function normalizePayrollConfiguration(value, fallback) {
 // Automatic Attendance Configuration
 // ---------------------------------------------------------------
 
+function formatNormalizedTime(value, fallback) {
+  if (value === undefined || value === null || value === '') {
+    return fallback
+  }
+
+  const raw = String(value).trim()
+  const match = raw.match(/^(\d{1,2}):(\d{2})$/)
+
+  if (match) {
+    const hours = Number(match[1])
+    const minutes = Number(match[2])
+
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+    }
+  }
+
+  return fallback
+}
+
 function normalizeAttendanceConfiguration(value, fallback) {
   if (!isPlainObject(value)) {
     return { ...fallback }
@@ -225,44 +245,20 @@ function normalizeAttendanceConfiguration(value, fallback) {
 
   const result = { ...fallback }
 
-  if (
-    value.checkInStartTime !== undefined &&
-    value.checkInStartTime !== null &&
-    value.checkInStartTime !== ''
-  ) {
-    result.checkInStartTime = String(
-      value.checkInStartTime,
-    ).trim()
+  if (value.checkInStartTime !== undefined && value.checkInStartTime !== null && value.checkInStartTime !== '') {
+    result.checkInStartTime = formatNormalizedTime(value.checkInStartTime, fallback.checkInStartTime)
   }
 
-  if (
-    value.requiredCheckInTime !== undefined &&
-    value.requiredCheckInTime !== null &&
-    value.requiredCheckInTime !== ''
-  ) {
-    result.requiredCheckInTime = String(
-      value.requiredCheckInTime,
-    ).trim()
+  if (value.requiredCheckInTime !== undefined && value.requiredCheckInTime !== null && value.requiredCheckInTime !== '') {
+    result.requiredCheckInTime = formatNormalizedTime(value.requiredCheckInTime, fallback.requiredCheckInTime)
   }
 
-  if (
-    value.checkOutStartTime !== undefined &&
-    value.checkOutStartTime !== null &&
-    value.checkOutStartTime !== ''
-  ) {
-    result.checkOutStartTime = String(
-      value.checkOutStartTime,
-    ).trim()
+  if (value.checkOutStartTime !== undefined && value.checkOutStartTime !== null && value.checkOutStartTime !== '') {
+    result.checkOutStartTime = formatNormalizedTime(value.checkOutStartTime, fallback.checkOutStartTime)
   }
 
-  if (
-    value.checkOutEndTime !== undefined &&
-    value.checkOutEndTime !== null &&
-    value.checkOutEndTime !== ''
-  ) {
-    result.checkOutEndTime = String(
-      value.checkOutEndTime,
-    ).trim()
+  if (value.checkOutEndTime !== undefined && value.checkOutEndTime !== null && value.checkOutEndTime !== '') {
+    result.checkOutEndTime = formatNormalizedTime(value.checkOutEndTime, fallback.checkOutEndTime)
   }
 
   if (value.geoRestrictionEnabled !== undefined && value.geoRestrictionEnabled !== null) {
@@ -334,7 +330,7 @@ function isValidTime(value) {
     return false
   }
 
-  const match = value.match(/^(\d{2}):(\d{2})$/)
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})$/)
 
   if (!match) {
     return false
@@ -576,6 +572,11 @@ async function readSettingsFromDatabase() {
 
   const settings = cloneDefaults()
 
+  if (records.length === 0) {
+    // Automatically seed default settings into database on first read
+    await saveSettingsToDatabase(settings).catch(() => { })
+  }
+
   for (const record of records) {
     if (record.key === 'app_settings') {
       const parsed = parseStoredValue(record.value, null)
@@ -598,9 +599,15 @@ async function readSettingsFromDatabase() {
     )
   }
 
-  settings.departments = normalizeStringList(settings.departments, [])
+  settings.departments = normalizeStringList(
+    settings.departments,
+    DEFAULT_SETTINGS.departments,
+  )
 
-  settings.jobTitles = normalizeStringList(settings.jobTitles, [])
+  settings.jobTitles = normalizeStringList(
+    settings.jobTitles,
+    DEFAULT_SETTINGS.jobTitles,
+  )
 
   settings.employmentTypes =
     normalizeStringList(
@@ -738,93 +745,132 @@ export async function updateHRSettings(req, res) {
       departments:
         normalizeStringList(
           incoming.departments ??
-            current.departments,
+          current.departments,
           current.departments,
         ),
 
       jobTitles:
         normalizeStringList(
           incoming.jobTitles ??
-            current.jobTitles,
+          current.jobTitles,
           current.jobTitles,
         ),
 
       employmentTypes:
         normalizeStringList(
           incoming.employmentTypes ??
-            current.employmentTypes,
+          current.employmentTypes,
           current.employmentTypes,
         ),
 
       employmentStatuses:
         normalizeStringList(
           incoming.employmentStatuses ??
-            current.employmentStatuses,
+          current.employmentStatuses,
           current.employmentStatuses,
         ),
 
       genders:
         normalizeStringList(
           incoming.genders ??
-            current.genders,
+          current.genders,
           current.genders,
         ),
 
       leaveTypes:
         normalizeStringList(
           incoming.leaveTypes ??
-            current.leaveTypes,
+          current.leaveTypes,
           current.leaveTypes,
         ),
 
       attendanceStatuses:
         normalizeStringList(
           incoming.attendanceStatuses ??
-            current.attendanceStatuses,
+          current.attendanceStatuses,
           current.attendanceStatuses,
         ),
 
       approvalStatuses:
         normalizeStringList(
           incoming.approvalStatuses ??
-            current.approvalStatuses,
+          current.approvalStatuses,
           current.approvalStatuses,
         ),
 
       deductionTypes:
         normalizeStringList(
           incoming.deductionTypes ??
-            current.deductionTypes,
+          current.deductionTypes,
           current.deductionTypes,
         ),
 
       attendanceCodes:
         normalizeAttendanceCodes(
           incoming.attendanceCodes ??
-            current.attendanceCodes,
+          current.attendanceCodes,
           current.attendanceCodes,
         ),
 
       payrollConfiguration:
         normalizePayrollConfiguration(
           incoming.payrollConfiguration ??
-            current.payrollConfiguration,
+          current.payrollConfiguration,
           current.payrollConfiguration,
         ),
 
       attendanceConfiguration:
         normalizeAttendanceConfiguration(
           incoming.attendanceConfiguration ??
-            current.attendanceConfiguration,
+          current.attendanceConfiguration,
           current.attendanceConfiguration,
         ),
 
       companyInformation:
         normalizeCompanyInformation(
           incoming.companyInformation ??
-            current.companyInformation,
+          current.companyInformation,
           current.companyInformation,
         ),
+    }
+
+    // Guard: Department must not be deleted if employees are assigned to it
+    if (incoming.departments !== undefined) {
+      const nextDepartments = nextSettings.departments || []
+      const assignedEmployees = await prisma.employee.findMany({
+        where: {
+          department: { notIn: nextDepartments },
+          isArchived: false,
+        },
+        select: {
+          id: true,
+          name: true,
+          employeeId: true,
+          department: true,
+        },
+      })
+
+      if (assignedEmployees.length > 0) {
+        const deptCountMap = {}
+        assignedEmployees.forEach((emp) => {
+          const d = emp.department
+          if (!d) return
+          if (!deptCountMap[d]) deptCountMap[d] = []
+          deptCountMap[d].push(emp.name || emp.employeeId)
+        })
+
+        if (Object.keys(deptCountMap).length > 0) {
+          const details = Object.entries(deptCountMap)
+            .map(([dept, emps]) => `"${dept}" (${emps.length} employee${emps.length > 1 ? 's' : ''}: ${emps.slice(0, 3).join(', ')}${emps.length > 3 ? '...' : ''})`)
+            .join('; ')
+
+          return res.status(400).json({
+            message: `Department cannot be deleted because employees are assigned to it: ${details}. Please reassign all employees before deleting the department.`,
+            code: 'DEPARTMENT_HAS_EMPLOYEES',
+            blockedDepartments: Object.keys(deptCountMap),
+          })
+        }
+      }
     }
 
     const errors =
@@ -854,6 +900,28 @@ export async function updateHRSettings(req, res) {
   }
 }
 
+export async function getDepartmentEmployeeCounts(_req, res) {
+  try {
+    const counts = await prisma.employee.groupBy({
+      by: ['department'],
+      where: { isArchived: false },
+      _count: { id: true },
+    })
+
+    const map = {}
+    counts.forEach((item) => {
+      if (item.department) {
+        map[item.department] = item._count.id
+      }
+    })
+
+    return res.json(map)
+  } catch (error) {
+    console.error('Failed to get department employee counts:', error)
+    return res.status(500).json({ message: 'Failed to check department employee assignments' })
+  }
+}
+
 export async function getAttendanceConfigurationFromDb() {
   try {
     const settingRecord = await prisma.setting.findUnique({
@@ -863,6 +931,18 @@ export async function getAttendanceConfigurationFromDb() {
     let config = {}
     if (settingRecord?.value) {
       config = parseStoredValue(settingRecord.value, {})
+    }
+
+    if (!config || Object.keys(config).length === 0) {
+      const appSettingsRecord = await prisma.setting.findUnique({
+        where: { key: 'app_settings' },
+      })
+      if (appSettingsRecord?.value) {
+        const parsed = parseStoredValue(appSettingsRecord.value, {})
+        if (parsed?.attendanceConfiguration) {
+          config = parsed.attendanceConfiguration
+        }
+      }
     }
 
     if (!config || Object.keys(config).length === 0) {
@@ -899,3 +979,4 @@ export async function getAttendanceConfigurationFromDb() {
 }
 
 export { DEFAULT_SETTINGS }
+

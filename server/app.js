@@ -8,11 +8,13 @@ import hrManagerRoutes  from './routes/hr-manager.routes.js'
 import messagesRoutes    from './routes/messages.routes.js'
 import announcementsRoutes from './routes/announcements.routes.js'
 import { requirePermission } from './middleware/rbac.middleware.js'
+import { UPLOAD_DIR } from './middleware/upload.js'
 
 const app = express()
 
 app.use(cors())
 app.use(express.json({ limit: '4mb' }))
+app.use('/uploads', express.static(UPLOAD_DIR))
 
 // ─── Public routes ────────────────────────────────────────────
 app.use('/api/auth', authRoutes)

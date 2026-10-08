@@ -39,7 +39,7 @@ const EVIDENCE_HINTS = {
  */
 function ApplyLeaveModal({ isOpen, onClose, onApply, employee = {} }) {
   const [form, setForm] = useState({
-    leaveType: 'Annual',
+    leaveType: 'Annual Leave',
     startDate: '',
     endDate: '',
     remarks: '',
@@ -50,7 +50,7 @@ function ApplyLeaveModal({ isOpen, onClose, onApply, employee = {} }) {
   // Reset the form whenever the modal is (re)opened
   useEffect(() => {
     if (isOpen) {
-      setForm({ leaveType: 'Annual', startDate: '', endDate: '', remarks: '' })
+      setForm({ leaveType: 'Annual Leave', startDate: '', endDate: '', remarks: '' })
       setEvidence(null)
       setError('')
     }

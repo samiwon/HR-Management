@@ -51,17 +51,17 @@ export default function HRProfileMenu({ compact = false }) {
 
   const raw = localStorage.getItem('user')
   let user = {
-    name: 'Sarah Jenkins',
-    email: 'hr@yanol.com',
-    role: 'HR_MANAGER',
-    company: 'Wishbone Global',
+    name: 'HR Administrator',
+    email: '',
+    role: 'HR_ADMIN',
+    company: 'Yanol-HR',
   }
 
   if (raw) {
     try {
       user = { ...user, ...JSON.parse(raw) }
     } catch {
-      // fallback to default HR Manager
+      // ignore
     }
   }
 

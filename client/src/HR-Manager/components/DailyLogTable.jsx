@@ -261,7 +261,7 @@ export default function DailyLogTable({
                 className="h-9 pl-2.5 pr-7 rounded-xl border border-slate-200 dark:border-[#262b31] bg-white dark:bg-[#1c2026] text-xs font-medium text-slate-700 dark:text-slate-300 appearance-none cursor-pointer focus:outline-none"
               >
                 <option value="All">All Departments</option>
-                {HR_SETTINGS.departments.map((d) => (
+                {Array.from(new Set([...HR_SETTINGS.departments, ...(employees || []).map((e) => e.department).filter(Boolean), ...(logs || []).map((l) => l.department).filter(Boolean)])).map((d) => (
                   <option key={d} value={d}>
                     {d}
                   </option>
@@ -294,11 +294,10 @@ export default function DailyLogTable({
               <button
                 type="button"
                 onClick={() => setViewMode('list')}
-                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                  viewMode === 'list'
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${viewMode === 'list'
                     ? 'bg-white dark:bg-[#15181d] shadow-2xs text-slate-900 dark:text-slate-100'
                     : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                }`}
+                  }`}
                 title="List View"
               >
                 <List className="w-4 h-4" />
@@ -306,11 +305,10 @@ export default function DailyLogTable({
               <button
                 type="button"
                 onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                  viewMode === 'grid'
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${viewMode === 'grid'
                     ? 'bg-white dark:bg-[#15181d] shadow-2xs text-slate-900 dark:text-slate-100'
                     : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                }`}
+                  }`}
                 title="Grid View"
               >
                 <LayoutGrid className="w-4 h-4" />
@@ -551,11 +549,10 @@ export default function DailyLogTable({
                   return (
                     <tr
                       key={log.id}
-                      className={`${
-                        idx % 2 === 1
+                      className={`${idx % 2 === 1
                           ? 'bg-slate-50/40 dark:bg-[#181c22]/40'
                           : 'bg-white dark:bg-[#15181d]'
-                      } hover:bg-slate-50/80 dark:hover:bg-[#1f242c] transition-colors group`}
+                        } hover:bg-slate-50/80 dark:hover:bg-[#1f242c] transition-colors group`}
                     >
                       {/* Mandatory Sequential ID Number (1, 2, 3...) */}
                       <td className="py-3 px-3.5 text-center font-mono font-medium text-slate-400 dark:text-slate-500 text-xs">
@@ -763,11 +760,10 @@ export default function DailyLogTable({
                 key={pageNum}
                 type="button"
                 onClick={() => setCurrentPage(pageNum)}
-                className={`w-7 h-7 rounded-md text-xs font-bold flex items-center justify-center transition-colors cursor-pointer ${
-                  safePage === pageNum
+                className={`w-7 h-7 rounded-md text-xs font-bold flex items-center justify-center transition-colors cursor-pointer ${safePage === pageNum
                     ? 'bg-slate-950 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#1c2026]'
-                }`}
+                  }`}
               >
                 {pageNum}
               </button>
@@ -779,11 +775,10 @@ export default function DailyLogTable({
               <button
                 type="button"
                 onClick={() => setCurrentPage(totalPages)}
-                className={`w-7 h-7 rounded-md text-xs font-bold flex items-center justify-center transition-colors cursor-pointer ${
-                  safePage === totalPages
+                className={`w-7 h-7 rounded-md text-xs font-bold flex items-center justify-center transition-colors cursor-pointer ${safePage === totalPages
                     ? 'bg-slate-950 text-white shadow-xs'
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#1c2026]'
-                }`}
+                  }`}
               >
                 {totalPages}
               </button>

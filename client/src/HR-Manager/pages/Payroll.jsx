@@ -1319,6 +1319,7 @@ export default function Payroll() {
   const [actionMenuId, setActionMenuId] = useState(null)
   const [deleteCandidate, setDeleteCandidate] = useState(null)
   const [savingTotalImage, setSavingTotalImage] = useState(false)
+  const [companyInfo, setCompanyInfo] = useState(null)
 
   async function loadEmployees() {
     try {
@@ -1387,6 +1388,7 @@ export default function Payroll() {
         )
       }
 
+      setCompanyInfo(data?.companyInformation || null)
       setPayrollConfiguration({
         ...DEFAULT_PAYROLL_CONFIGURATION,
         ...(data?.payrollConfiguration ||
@@ -2066,8 +2068,8 @@ export default function Payroll() {
       const { filename } = await exportPayrollRecordsImage({
         month: payrollMonth,
         records: rows,
-        companyName: HR_SETTINGS.company.name,
-        currency: HR_SETTINGS.company.currency,
+        companyName: companyInfo?.companyName || HR_SETTINGS.company.name,
+        currency: companyInfo?.currency || HR_SETTINGS.company.currency,
       })
       setPayrollError('')
       setNotice(`Saved the payroll records for ${payrollMonth} as ${filename}.`)
@@ -2082,8 +2084,8 @@ export default function Payroll() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-[1800px] px-4 py-6 sm:px-6 lg:px-8">
+    <div className="min-h-full bg-[#F3F4F6] text-slate-950">
+      <main className="w-full max-w-[1600px] px-5 py-6 sm:px-8">
         <PageTitle
           eyebrow="Payroll Management"
           title="Manage Employee Payroll"
@@ -2105,7 +2107,7 @@ export default function Payroll() {
             </div>
             ) : null
           }
-          className="mb-8"
+          className="animate-employee-hero mb-8 px-0 py-2"
         />
 
         {error && (
@@ -2644,7 +2646,7 @@ export default function Payroll() {
           </div>
         </section>
 
-      </div>
+      </main>
 
       {modalOpen && (
         <PayrollModal

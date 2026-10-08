@@ -55,17 +55,9 @@ export const HR_SETTINGS = {
     paternityDays: 3,
   },
 
-  // Central Departments list as specified in requirements
-  departments: [
-    'Administration',
-    'Finance',
-    'Human Resources',
-    'IT',
-    'Logistics',
-    'Operations',
-    'Procurement',
-    'Sales & Marketing',
-  ],
+  // Central Departments list (dynamically managed by Admin in HR Settings)
+  departments: [],
+  jobTitles: [],
 
   employmentTypes: ['Permanent', 'Contractual', 'Intern'],
   employmentStatuses: ['Active', 'On Leave', 'Resigned', 'Terminated'],
@@ -74,3 +66,4 @@ export const HR_SETTINGS = {
   approvalStatuses: ['Pending', 'Approved', 'Rejected'],
   genders: ['Female', 'Male'],
 }
+

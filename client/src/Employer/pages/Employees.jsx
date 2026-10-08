@@ -21,7 +21,7 @@ import OrgChartView from '../components/OrgChartView'
 import { fetchEmployees, createEmployee, resetEmployeePassword } from '../lib/employerApi'
 
 function Employees() {
-  const [employees, setEmployees] = useState(INITIAL_EMPLOYEES)
+  const [employees, setEmployees] = useState([])
   const [activeTab, setActiveTab] = useState('list')
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedDept, setSelectedDept] = useState('All Departments')

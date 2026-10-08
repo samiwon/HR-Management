@@ -187,8 +187,15 @@ function Field({
   )
 }
 
-function ListEditor({ title, items, onChange }) {
+function ListEditor({
+  title,
+  items,
+  onChange,
+  counts = {},
+  onValidateRemove = null,
+}) {
   const [newItem, setNewItem] = useState('')
+  const [validationError, setValidationError] = useState('')
 
   const addItem = () => {
     const value = newItem.trim()
@@ -197,11 +204,21 @@ function ListEditor({ title, items, onChange }) {
       return
     }
 
+    setValidationError('')
     onChange([...items, value])
     setNewItem('')
   }
 
   const removeItem = (item) => {
+    if (onValidateRemove) {
+      const err = onValidateRemove(item)
+      if (err) {
+        setValidationError(err)
+        return
+      }
+    }
+
+    setValidationError('')
     onChange(
       items.filter((current) => current !== item),
     )
@@ -246,26 +263,71 @@ function ListEditor({ title, items, onChange }) {
         </button>
       </div>
 
-      <div className="mt-3 space-y-2">
-        {items.map((item) => (
-          <div
-            key={item}
-            className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(15,23,42,0.03)]"
-          >
-            <span className="text-sm text-slate-700">
-              {item}
-            </span>
-
-            <button
-              type="button"
-              onClick={() => removeItem(item)}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-red-600"
-              aria-label={`Remove ${item}`}
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
+      {validationError && (
+        <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+          <div className="flex-1 leading-relaxed">
+            <strong>Action Blocked: </strong>{validationError}
           </div>
-        ))}
+          <button
+            type="button"
+            onClick={() => setValidationError('')}
+            className="text-rose-500 hover:text-rose-700 font-bold px-1"
+            aria-label="Dismiss error"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      <div className="mt-3 space-y-2">
+        {items.map((item) => {
+          const assignedCount = counts[item] ?? 0
+          const hasEmployees = assignedCount > 0
+
+          return (
+            <div
+              key={item}
+              className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-white px-3.5 py-2.5 shadow-[0_1px_3px_rgba(15,23,42,0.03)]"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-sm font-medium text-slate-700 truncate">
+                  {item}
+                </span>
+
+                {counts[item] !== undefined && (
+                  hasEmployees ? (
+                    <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 border border-amber-200/80">
+                      {assignedCount} employee{assignedCount > 1 ? 's' : ''}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-md bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-400">
+                      0 assigned
+                    </span>
+                  )
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => removeItem(item)}
+                className={`rounded-lg p-1.5 transition ${
+                  hasEmployees
+                    ? 'text-slate-300 hover:text-rose-600 hover:bg-rose-50'
+                    : 'text-slate-400 hover:bg-white hover:text-red-600'
+                }`}
+                title={
+                  hasEmployees
+                    ? `Cannot delete: ${assignedCount} employee(s) assigned`
+                    : `Remove ${item}`
+                }
+                aria-label={`Remove ${item}`}
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          )
+        })}
 
         {!items.length && (
           <p className="rounded-lg bg-slate-50 px-3 py-3 text-xs text-slate-400">
@@ -396,6 +458,25 @@ function HRSettings() {
   const [error, setError] = useState('')
   const [detectingLocation, setDetectingLocation] = useState(false)
   const [locationMessage, setLocationMessage] = useState('')
+  const [departmentUsage, setDepartmentUsage] = useState({})
+
+  const loadDepartmentUsage = async () => {
+    try {
+      const res = await fetch(`${API_URL}/departments/usage`, {
+        headers: authHeaders(),
+      })
+      if (res.ok) {
+        const usage = await res.json()
+        setDepartmentUsage(usage || {})
+      }
+    } catch {
+      // Ignored
+    }
+  }
+
+  useEffect(() => {
+    loadDepartmentUsage()
+  }, [])
 
   // The signed-in admin's own login details. Deliberately separate from
   // companyInformation below, which is the organisation's public address and
@@ -850,14 +931,14 @@ function HRSettings() {
   }
 
   return (
-    <div className="min-h-full bg-gradient-to-br from-slate-50 via-[#F3F4F6] to-indigo-50/30 p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
+    <div className="min-h-full bg-[#F3F4F6] text-slate-950">
+      <main className="w-full max-w-[1600px] px-5 py-6 sm:px-8 space-y-6">
 
         {/* Shared Page Title */}
         <PageTitle
-          eyebrow="HR Settings"
-          title="Manage HR Settings"
-          description="Database-backed configuration from the Ethiopia HR Payroll System workbook."
+          eyebrow="System Configuration"
+          title="HR Settings"
+          description="Configure organization details, statutory tax brackets, working hours, and access permissions."
           action={
             <Button
               type="button"
@@ -870,7 +951,7 @@ function HRSettings() {
               {saved ? 'Saved' : 'Save Settings'}
             </Button>
           }
-          className="mb-8"
+          className="animate-employee-hero mb-8 px-0 py-2"
         />
 
         {/* Error */}
@@ -1635,6 +1716,18 @@ function HRSettings() {
                 key={key}
                 title={label}
                 items={settings[key] || []}
+                counts={key === 'departments' ? departmentUsage : {}}
+                onValidateRemove={
+                  key === 'departments'
+                    ? (dept) => {
+                        const count = departmentUsage[dept] || 0
+                        if (count > 0) {
+                          return `Cannot delete department "${dept}": ${count} active employee${count > 1 ? 's are' : ' is'} assigned to it. Please reassign all employees in Employee Management before deleting.`
+                        }
+                        return null
+                      }
+                    : null
+                }
                 onChange={(value) =>
                   updateSetting(key, value)
                 }
@@ -1674,7 +1767,7 @@ function HRSettings() {
             {saved ? 'Settings Saved' : 'Save Settings'}
           </Button>
         </div>
-      </div>
+      </main>
     </div>
   )
 }

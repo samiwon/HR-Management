@@ -11,6 +11,9 @@ const allowedTypes = new Map([
   ['.pdf', ['application/pdf']],
   ['.doc', ['application/msword', 'application/octet-stream']],
   ['.docx', ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/octet-stream']],
+  ['.png', ['image/png']],
+  ['.jpg', ['image/jpeg']],
+  ['.jpeg', ['image/jpeg']],
 ])
 
 const storage = multer.diskStorage({
@@ -28,7 +31,7 @@ const upload = multer({
     const extension = path.extname(file.originalname).toLowerCase()
     const mimeTypes = allowedTypes.get(extension)
     if (!mimeTypes || !mimeTypes.includes(file.mimetype)) {
-      callback(new Error('Upload a PDF, DOC, or DOCX file.'))
+      callback(new Error('Upload a PDF, DOC, DOCX, PNG, or JPG file.'))
       return
     }
     callback(null, true)

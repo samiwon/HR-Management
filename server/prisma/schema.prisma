@@ -199,12 +199,28 @@ model Employee {
   statusFileMimeType    String?
   statusFileSize        Int?
 
+  isArchived         Boolean  @default(false)
+  archivedAt         DateTime?
   createdAt          DateTime @default(now())
 
   attendance     Attendance[]
   leaveRequests  LeaveRequest[]
   payrollRecords PayrollRecord[]
+  documents      EmployeeDocument[]
   user           User?
+}
+
+model EmployeeDocument {
+  id                String   @id @default(uuid())
+  employeeId        String
+  title             String
+  storageName       String
+  fileName          String
+  mimeType          String
+  fileSize          Int
+  uploadedAt        DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 }
 
 model Attendance {

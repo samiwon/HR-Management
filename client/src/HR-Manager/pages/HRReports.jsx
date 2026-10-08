@@ -427,13 +427,22 @@ function HRReports() {
   }
 
   return (
-    <div className="min-h-full bg-[#F3F4F6] p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
+    <div className="min-h-full bg-[#F3F4F6] text-slate-950">
+      <main className="w-full max-w-[1600px] px-5 py-6 sm:px-8">
         <PageTitle
-          eyebrow="HR Reports"
-          title="Workforce Reports"
-          description="Database-backed workforce, attendance and payroll analytics for Yanol Tech."
-          className="mb-8"
+          eyebrow="Workforce Analytics"
+          title="HR Reports"
+          description="Database-backed workforce statistics, department distributions, and monthly payroll reports."
+          action={
+            <Button
+              type="button"
+              onClick={handleExport}
+              icon={Download}
+            >
+              Export CSV
+            </Button>
+          }
+          className="animate-employee-hero mb-8 px-0 py-2"
         />
 
         <div className="mb-6">
@@ -1035,7 +1044,7 @@ function HRReports() {
 
           </>
         )}
-      </div>
+      </main>
     </div>
   )
 }

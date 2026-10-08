@@ -20,6 +20,7 @@ import { Modal, PageTitle, SummaryCard, Table } from '../../components/ui'
 import TableDataTools from '../components/TableDataTools'
 import { useAccess } from '../../lib/rbac'
 import { authHeaders } from '../../lib/hrApi'
+import { getSocket } from '../../lib/socket'
 import {
   EDITABLE_STATUSES,
   attendanceStatusPayload,
@@ -1196,6 +1197,20 @@ function Attendance() {
 
   useEffect(() => {
     loadData(true)
+  }, [loadData])
+
+  useEffect(() => {
+    const socket = getSocket()
+    if (!socket) return
+
+    const handleAttendanceUpdate = () => {
+      loadData(false)
+    }
+
+    socket.on('hr-attendance-update', handleAttendanceUpdate)
+    return () => {
+      socket.off('hr-attendance-update', handleAttendanceUpdate)
+    }
   }, [loadData])
 
   useEffect(() => {

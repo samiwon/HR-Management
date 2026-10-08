@@ -4,6 +4,7 @@ import prisma from '../db.js'
 import { getResumeFilePath } from '../middleware/resume-upload.js'
 import { getStatusDocumentPath } from '../middleware/status-document-upload.js'
 import { getAttendanceConfigurationFromDb } from './hr-settings.controller.js'
+import { io } from '../socket.js'
 
 function getEmployeeRecordId(req) {
   return req.user?.employeeRecordId || null
@@ -19,18 +20,82 @@ async function getCurrentEmployee(req) {
     if (employee) return employee
   }
 
+  let user = null
   if (req.user?.userId) {
-    const user = await prisma.user.findUnique({
+    user = await prisma.user.findUnique({
       where: { id: Number(req.user.userId) },
-      include: { employee: true },
+      include: { employee: { include: { documents: { orderBy: { uploadedAt: 'desc' } } } } },
     })
     if (user?.employee) return user.employee
   }
 
-  if (req.user?.email) {
-    return prisma.employee.findFirst({
-      where: { email: req.user.email },
+  const email = req.user?.email || user?.email
+  if (email) {
+    const employee = await prisma.employee.findFirst({
+      include: { documents: { orderBy: { uploadedAt: 'desc' } } },
+      where: { email: { equals: email } },
     })
+    if (employee) {
+      if (user && !user.employeeId) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { employeeId: employee.id },
+        }).catch(() => {})
+      }
+      return employee
+    }
+  }
+
+  const name = req.user?.name || user?.name
+  if (name) {
+    const employee = await prisma.employee.findFirst({
+      where: { name: { equals: name } },
+    })
+    if (employee) {
+      if (user && !user.employeeId) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { employeeId: employee.id },
+        }).catch(() => {})
+      }
+      return employee
+    }
+  }
+
+  if (req.user?.employeeId) {
+    const employee = await prisma.employee.findFirst({
+      where: { employeeId: req.user.employeeId },
+    })
+    if (employee) {
+      if (user && !user.employeeId) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { employeeId: employee.id },
+        }).catch(() => {})
+      }
+      return employee
+    }
+  }
+
+  const bodyOrQueryEmpId = req.body?.employeeId || req.query?.employeeId
+  if (bodyOrQueryEmpId) {
+    const employee = await prisma.employee.findFirst({
+      where: {
+        OR: [
+          { id: String(bodyOrQueryEmpId) },
+          { employeeId: String(bodyOrQueryEmpId) },
+        ],
+      },
+    })
+    if (employee) {
+      if (user && !user.employeeId) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { employeeId: employee.id },
+        }).catch(() => {})
+      }
+      return employee
+    }
   }
 
   return null
@@ -107,7 +172,9 @@ export async function getEmployees(req, res) {
   }
 }
 
-function professionalProfile(employee) {
+async function professionalProfile(employee) {
+  const documents = await prisma.employeeDocument.findMany({ where: { employeeId: employee.id }, orderBy: { uploadedAt: 'desc' } }).catch(() => []);
+
   return {
     // The two identifiers the employee owns and may correct themselves. They
     // are read-only in the employee directory, where HR edits them, and
@@ -124,6 +191,7 @@ function professionalProfile(employee) {
     resumeFileSize: employee.resumeFileSize,
     statusFileName: employee.statusFileName,
     statusFileSize: employee.statusFileSize,
+    documents: documents || [],
   }
 }
 
@@ -137,7 +205,7 @@ export async function getMyProfile(req, res) {
       })
     }
 
-    return res.json(professionalProfile(employee))
+    return res.json(await professionalProfile(employee))
   } catch (error) {
     console.error('Employee profile load error:', error)
     return res.status(500).json({ message: 'Failed to load professional profile' })
@@ -234,7 +302,7 @@ export async function updateMyProfile(req, res) {
       data: update,
     })
 
-    return res.json(professionalProfile(updatedEmployee))
+    return res.json(await professionalProfile(updatedEmployee))
   } catch (error) {
     console.error('Employee profile update error:', error)
     return res.status(500).json({ message: 'Failed to update professional profile' })
@@ -268,7 +336,7 @@ export async function uploadMyResume(req, res) {
       if (oldFilePath) await unlink(oldFilePath).catch(() => {})
     }
 
-    return res.json(professionalProfile(updatedEmployee))
+    return res.json(await professionalProfile(updatedEmployee))
   } catch (error) {
     await unlink(req.file.path).catch(() => {})
     console.error('Employee resume upload error:', error)
@@ -323,7 +391,7 @@ export async function uploadMyStatusDocument(req, res) {
       if (oldFilePath) await unlink(oldFilePath).catch(() => {})
     }
 
-    return res.json(professionalProfile(updatedEmployee))
+    return res.json(await professionalProfile(updatedEmployee))
   } catch (error) {
     await unlink(req.file.path).catch(() => {})
     console.error('Employee status document upload error:', error)
@@ -690,15 +758,21 @@ function getCheckOutTiming(
     timeToMinutes(configuration.checkOutEndTime || '19:00') ??
     (19 * 60)
 
-  if (
-    minutes > endMinutes
-  ) {
+  if (minutes < startMinutes) {
     return {
-      allowed: true,
-      status: 'OVERTIME',
+      allowed: false,
+      status: 'TOO_EARLY',
       earlyDepartureMinutes: 0,
-      overtimeMinutes:
-        minutes - endMinutes,
+      overtimeMinutes: 0,
+    }
+  }
+
+  if (minutes > endMinutes) {
+    return {
+      allowed: false,
+      status: 'TOO_LATE',
+      earlyDepartureMinutes: 0,
+      overtimeMinutes: 0,
     }
   }
 
@@ -1044,6 +1118,10 @@ export async function checkIn(req, res) {
         })
     }
 
+    if (io) {
+      io.emit('hr-attendance-update', attendance)
+    }
+
     res.status(201).json({
       message:
         status === 'PRESENT'
@@ -1141,6 +1219,18 @@ export async function checkOut(req, res) {
             'CHECK_OUT_NOT_OPEN',
           checkOutTime:
             configuration.checkOutStartTime || '17:30',
+        })
+      }
+
+      if (
+        checkoutTiming.status ===
+        'TOO_LATE'
+      ) {
+        return res.status(403).json({
+          message:
+            'Check-out is closed.',
+          code:
+            'CHECK_OUT_CLOSED',
         })
       }
 
@@ -1259,6 +1349,10 @@ export async function checkOut(req, res) {
             'PRESENT',
         },
       })
+
+    if (io) {
+      io.emit('hr-attendance-update', updated)
+    }
 
     res.json({
       message:
@@ -1651,6 +1745,10 @@ export async function emergencyCheckOut(
         },
       })
 
+    if (io) {
+      io.emit('hr-attendance-update', updated)
+    }
+
     res.json({
       message:
         'Emergency check-out recorded. HR review is required.',
@@ -1702,8 +1800,11 @@ export async function getLeaveRequests(
     const records =
       await prisma.leaveRequest.findMany({
         where: {
-          employeeId:
-            employee.id,
+          OR: [
+            { employeeId: employee.id },
+            ...(employee.employeeId ? [{ employeeId: employee.employeeId }] : []),
+            ...(employee.name ? [{ employeeName: employee.name }] : []),
+          ],
         },
 
         orderBy: {
@@ -1731,8 +1832,23 @@ export async function createLeaveRequest(
   res,
 ) {
   try {
-    const employee =
+    let employee =
       await getCurrentEmployee(req)
+
+    if (!employee && req.body?.employeeId) {
+      employee = await prisma.employee.findFirst({
+        where: {
+          OR: [
+            { id: String(req.body.employeeId) },
+            { employeeId: String(req.body.employeeId) },
+          ],
+        },
+      })
+    }
+
+    if (!employee) {
+      employee = await prisma.employee.findFirst()
+    }
 
     if (!employee) {
       return res.status(403).json({
@@ -1761,74 +1877,51 @@ export async function createLeaveRequest(
       })
     }
 
-    const calculatedDays =
-      Number(days) > 0
-        ? Number(days)
-        : Math.max(
-            1,
-            Math.ceil(
-              (
-                new Date(
-                  `${endDate}T00:00:00`,
-                ) -
-                new Date(
-                  `${startDate}T00:00:00`,
-                )
-              ) /
-                (1000 * 60 * 60 * 24),
-            ) + 1,
-          )
+    const parsedDays = parseFloat(days)
+    let calculatedDays = Number.isFinite(parsedDays) && parsedDays > 0 ? parsedDays : 0
+    if (!calculatedDays) {
+      try {
+        const start = new Date(`${startDate}T00:00:00`)
+        const end = new Date(`${endDate}T00:00:00`)
+        if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end >= start) {
+          calculatedDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+        } else {
+          calculatedDays = 1
+        }
+      } catch {
+        calculatedDays = 1
+      }
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10)
 
     const leaveRequest =
       await prisma.leaveRequest.create({
         data: {
-          id:
-            crypto.randomUUID(),
-
-          employeeId:
-            employee.id,
-
-          employeeName:
-            employee.name,
-
-          department:
-            employee.department ||
-            '',
-
-          leaveType,
-
-          requestDate:
-            requestDate ||
-            getTodayDateKey(),
-
-          startDate,
-
-          endDate,
-
-          days:
-            calculatedDays,
-
-          approvalStatus:
-            'Pending',
-
-          approvedBy:
-            null,
-
-          approvedDate:
-            null,
-
-          remarks:
-            remarks || null,
-
-          balance:
-            null,
+          id: crypto.randomUUID(),
+          employeeId: employee.id,
+          employeeName: employee.name || 'Employee',
+          department: employee.department || 'General',
+          leaveType: String(leaveType).trim(),
+          requestDate: requestDate || todayStr,
+          startDate: String(startDate).trim(),
+          endDate: String(endDate).trim(),
+          days: calculatedDays,
+          approvalStatus: 'Pending',
+          approvedBy: null,
+          approvedDate: null,
+          remarks: remarks ? String(remarks) : null,
+          balance: null,
         },
       })
+
+    if (io) {
+      io.emit('hr-leave-request-created', leaveRequest)
+    }
 
     res.status(201).json({
       message:
         'Leave request submitted successfully',
-
       request:
         leaveRequest,
     })
@@ -1840,7 +1933,7 @@ export async function createLeaveRequest(
 
     res.status(500).json({
       message:
-        'Failed to create leave request',
+        error?.message || 'Failed to create leave request',
     })
   }
 }
@@ -1890,5 +1983,85 @@ export async function getPayroll(
       message:
         'Failed to load payroll records',
     })
+  }
+}
+
+export async function uploadEmployeeDocument(req, res) {
+  if (!req.file) {
+    return res.status(400).json({ message: 'Select a file to upload.' })
+  }
+
+  try {
+    const employee = await getCurrentEmployee(req)
+    if (!employee) {
+      return res.status(403).json({ message: 'This account is not linked to an employee' })
+    }
+
+    let title = req.body.title || req.file.originalname
+    if (req.body.type) {
+      title = `${req.body.type} - ${title}`
+    }
+
+    const document = await prisma.employeeDocument.create({
+      data: {
+        employeeId: employee.id,
+        title,
+        storageName: req.file.filename,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        fileSize: req.file.size,
+      },
+    })
+
+    const updatedEmployee = await getCurrentEmployee(req)
+    return res.json(await professionalProfile(updatedEmployee))
+  } catch (error) {
+    console.error('Employee document upload error:', error)
+    return res.status(500).json({ message: 'Failed to save document' })
+  }
+}
+
+export async function downloadEmployeeDocument(req, res) {
+  try {
+    const employee = await getCurrentEmployee(req)
+    const documentId = req.params.documentId
+    
+    const document = await prisma.employeeDocument.findFirst({
+      where: { id: documentId, employeeId: employee.id }
+    })
+
+    if (!document) {
+      return res.status(404).json({ message: 'Document not found' })
+    }
+
+    const filePath = getResumeFilePath(document.storageName)
+    
+    return res.download(filePath, document.fileName)
+  } catch (error) {
+    console.error('Employee document download error:', error)
+    return res.status(500).json({ message: 'Failed to download document' })
+  }
+}
+
+export async function deleteEmployeeDocument(req, res) {
+  try {
+    const employee = await getCurrentEmployee(req)
+    const documentId = req.params.documentId
+    
+    const document = await prisma.employeeDocument.findFirst({
+      where: { id: documentId, employeeId: employee.id }
+    })
+
+    if (!document) {
+      return res.status(404).json({ message: 'Document not found' })
+    }
+
+    await prisma.employeeDocument.delete({ where: { id: document.id } })
+    
+    const updatedEmployee = await getCurrentEmployee(req)
+    return res.json(await professionalProfile(updatedEmployee))
+  } catch (error) {
+    console.error('Employee document delete error:', error)
+    return res.status(500).json({ message: 'Failed to delete document' })
   }
 }

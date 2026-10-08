@@ -10,7 +10,6 @@ import {
   Settings as SettingsIcon,
 } from 'lucide-react'
 import { getDefaultSettings } from '../data/settingsData'
-import { INITIAL_EMPLOYEES } from '../data/employeeData'
 
 const STORAGE_KEY = 'yanol-settings'
 
@@ -115,8 +114,6 @@ function SettingsPage() {
     setConfig(getDefaultSettings())
     showToast('Settings reset to defaults')
   }
-
-  const jobTitles = useMemo(() => [...new Set(INITIAL_EMPLOYEES.map((e) => e.jobTitle))].sort(), [])
 
   const compInputs = [
     ['name', 'Company Name'],

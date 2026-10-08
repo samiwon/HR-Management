@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AlertCircle, Info, Loader2, Megaphone, Plus, Send, Trash2, X } from 'lucide-react'
-import { PageTitle } from '../../components/ui'
+import { Button, PageTitle } from '../../components/ui'
 import { Can } from '../../lib/rbac'
 import { authHeaders } from '../../lib/hrApi'
 
@@ -116,9 +116,25 @@ export default function CompanyAnnouncements() {
   }
 
   return (
-    <div className="min-h-full bg-[#F3F4F6] p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-6xl">
-        <PageTitle eyebrow="Company Updates" title="Company Announcements" className="mb-6" action={<Can permission="announcements.create"><button type="button" onClick={() => setModalOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0092B8] px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#007a99] focus:outline-none focus:ring-4 focus:ring-cyan-100"><Plus size={17} />New Announcement</button></Can>} />
+    <div className="min-h-full bg-[#F3F4F6] text-slate-950">
+      <main className="w-full max-w-[1600px] px-5 py-6 sm:px-8">
+        <PageTitle
+          eyebrow="Company Updates"
+          title="Company Announcements"
+          description="Broadcast notices, policies, and company-wide news across the organization."
+          className="animate-employee-hero mb-8 px-0 py-2"
+          action={
+            <Can permission="announcements.create">
+              <Button
+                type="button"
+                onClick={() => setModalOpen(true)}
+                icon={Plus}
+              >
+                New Announcement
+              </Button>
+            </Can>
+          }
+        />
 
         {error && <div role="alert" className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><AlertCircle className="mt-0.5 shrink-0" size={17} />{error}</div>}
 
@@ -137,7 +153,7 @@ export default function CompanyAnnouncements() {
             </div>
           )}
         </section>
-      </div>
+      </main>
       {modalOpen && <NewAnnouncementModal onClose={() => setModalOpen(false)} onCreated={handleCreated} />}
       {confirmDelete && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/45 p-4"><section role="alertdialog" aria-modal="true" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"><h2 className="text-lg font-bold text-slate-900">Delete announcement?</h2><p className="mt-2 text-sm text-slate-600">“{confirmDelete.title}” will be removed for all employees. This cannot be undone.</p><div className="mt-6 flex justify-end gap-3"><button type="button" disabled={deleting} onClick={() => setConfirmDelete(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">Cancel</button><button type="button" disabled={deleting} onClick={deleteSelectedAnnouncement} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{deleting ? 'Deleting…' : 'Delete announcement'}</button></div></section></div>}
     </div>

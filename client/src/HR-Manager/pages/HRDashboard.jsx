@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { getSocket } from '../../lib/socket'
 
 import {
   ArrowUpRight,
@@ -29,6 +30,8 @@ function HRDashboard() {
   const [employeesLoading, setEmployeesLoading] = useState(true)
   const [attendanceRecords, setAttendanceRecords] = useState([])
   const [attendanceLoading, setAttendanceLoading] = useState(true)
+  const [leaveRequests, setLeaveRequests] = useState([])
+  const [leaveLoading, setLeaveLoading] = useState(true)
 
   /*
    * =========================================================
@@ -45,7 +48,7 @@ function HRDashboard() {
 
   /*
    * =========================================================
-   * EMPLOYEE STATISTICS
+   * EMPLOYEE & LEAVE STATISTICS
    * =========================================================
    */
 
@@ -57,11 +60,29 @@ function HRDashboard() {
       employee.status === 'Active'
   ).length
 
-  const onLeaveEmployees = employees.filter(
-    (employee) =>
-      employee.employmentStatus === 'On Leave' ||
-      employee.status === 'On Leave'
-  ).length
+  const onLeaveEmployees = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10)
+    const onLeaveFromStatus = employees.filter(
+      (employee) =>
+        employee.employmentStatus === 'On Leave' ||
+        employee.status === 'On Leave'
+    ).length
+
+    const activeApprovedLeaveCount = leaveRequests.filter((req) => {
+      if (req.approvalStatus !== 'Approved') return false
+      const start = String(req.startDate || '').slice(0, 10)
+      const end = String(req.endDate || '').slice(0, 10)
+      return start && end && start <= todayStr && todayStr <= end
+    }).length
+
+    return Math.max(onLeaveFromStatus, activeApprovedLeaveCount)
+  }, [employees, leaveRequests])
+
+  const pendingLeaveCount = useMemo(() => {
+    return leaveRequests.filter(
+      (req) => req.approvalStatus === 'Pending' || req.status === 'Pending'
+    ).length
+  }, [leaveRequests])
 
   const departments = new Set(
     employees
@@ -174,6 +195,7 @@ function HRDashboard() {
       try {
         setEmployeesLoading(true)
         setAttendanceLoading(true)
+        setLeaveLoading(true)
 
         const today = new Date()
         today.setHours(0, 0, 0, 0)
@@ -181,71 +203,107 @@ function HRDashboard() {
         const startDate = new Date(today)
         startDate.setDate(today.getDate() - 6)
 
-        const [employeesResponse, attendanceResponse] =
-          await Promise.all([
+        const [employeesResponse, attendanceResponse, leaveResponse] =
+          await Promise.allSettled([
             fetch(`${API_URL}/employees`, { cache: 'no-store' }),
             fetch(
               `${API_URL}/attendance?startDate=${formatDate(startDate)}&endDate=${formatDate(today)}`,
               { cache: 'no-store' },
             ),
+            fetch(`${API_URL}/leave`, { cache: 'no-store' }),
           ])
 
-        if (!employeesResponse.ok) {
-          throw new Error(
-            `Failed to load employees: ${employeesResponse.status}`,
-          )
-        }
-
-        if (!attendanceResponse.ok) {
-          throw new Error(
-            `Failed to load attendance: ${attendanceResponse.status}`,
-          )
-        }
-
-        const employeeResult = await employeesResponse.json()
-        const attendanceResult = await attendanceResponse.json()
-
-        const employeeRows = Array.isArray(employeeResult)
-          ? employeeResult
-          : Array.isArray(employeeResult?.data)
-            ? employeeResult.data
-            : Array.isArray(employeeResult?.employees)
-              ? employeeResult.employees
-              : []
-
-        const attendanceRows = Array.isArray(attendanceResult)
-          ? attendanceResult
-          : Array.isArray(attendanceResult?.data)
-            ? attendanceResult.data
-            : Array.isArray(attendanceResult?.attendance)
-              ? attendanceResult.attendance
-              : Array.isArray(attendanceResult?.records)
-                ? attendanceResult.records
+        if (!cancelled && employeesResponse.status === 'fulfilled' && employeesResponse.value.ok) {
+          const employeeResult = await employeesResponse.value.json().catch(() => [])
+          const employeeRows = Array.isArray(employeeResult)
+            ? employeeResult
+            : Array.isArray(employeeResult?.data)
+              ? employeeResult.data
+              : Array.isArray(employeeResult?.employees)
+                ? employeeResult.employees
                 : []
-
-        if (!cancelled) {
           setEmployees(employeeRows)
+        }
+
+        if (!cancelled && attendanceResponse.status === 'fulfilled' && attendanceResponse.value.ok) {
+          const attendanceResult = await attendanceResponse.value.json().catch(() => [])
+          const attendanceRows = Array.isArray(attendanceResult)
+            ? attendanceResult
+            : Array.isArray(attendanceResult?.data)
+              ? attendanceResult.data
+              : Array.isArray(attendanceResult?.attendance)
+                ? attendanceResult.attendance
+                : Array.isArray(attendanceResult?.records)
+                  ? attendanceResult.records
+                  : []
           setAttendanceRecords(attendanceRows)
+        }
+
+        if (!cancelled && leaveResponse.status === 'fulfilled' && leaveResponse.value.ok) {
+          const leaveResult = await leaveResponse.value.json().catch(() => [])
+          const leaveRows = Array.isArray(leaveResult)
+            ? leaveResult
+            : Array.isArray(leaveResult?.data)
+              ? leaveResult.data
+              : Array.isArray(leaveResult?.leaveRequests)
+                ? leaveResult.leaveRequests
+                : Array.isArray(leaveResult?.requests)
+                  ? leaveResult.requests
+                  : []
+          setLeaveRequests(leaveRows)
         }
       } catch (error) {
         console.error('Failed to load HR dashboard data:', error)
-
-        if (!cancelled) {
-          setEmployees([])
-          setAttendanceRecords([])
-        }
       } finally {
         if (!cancelled) {
           setEmployeesLoading(false)
           setAttendanceLoading(false)
+          setLeaveLoading(false)
         }
       }
     }
 
     loadDashboardData()
 
+    // Real-time listener for newly submitted leave requests from employees
+    const handleLeaveCreated = () => {
+      loadDashboardData()
+    }
+
+    const handleStorage = (event) => {
+      if (event.key === 'hr-leave-request-created') {
+        loadDashboardData()
+      }
+    }
+
+    window.addEventListener('hr-leave-request-created', handleLeaveCreated)
+    window.addEventListener('storage', handleStorage)
+
+    let channel
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        channel = new BroadcastChannel('hr-leave-requests')
+        channel.onmessage = () => loadDashboardData()
+      } catch {}
+    }
+
+    const socket = getSocket()
+    if (socket) {
+      socket.on('hr-leave-request-created', loadDashboardData)
+      socket.on('hr-attendance-update', loadDashboardData)
+    }
+
     return () => {
       cancelled = true
+      window.removeEventListener('hr-leave-request-created', handleLeaveCreated)
+      window.removeEventListener('storage', handleStorage)
+      if (channel) channel.close()
+      
+      const socket = getSocket()
+      if (socket) {
+        socket.off('hr-leave-request-created', loadDashboardData)
+        socket.off('hr-attendance-update', loadDashboardData)
+      }
     }
   }, [])
 
@@ -602,6 +660,43 @@ function HRDashboard() {
     'bg-blue-100 text-blue-700',
   ]
 
+  const getLeaveTypeBadge = (leaveType) => {
+    const normalized = String(leaveType || '').toLowerCase()
+    if (normalized.includes('sick')) {
+      return 'bg-teal-50 text-teal-700 ring-1 ring-teal-200/70'
+    }
+    if (normalized.includes('maternity') || normalized.includes('paternity')) {
+      return 'bg-pink-50 text-pink-700 ring-1 ring-pink-200/70'
+    }
+    if (normalized.includes('unpaid')) {
+      return 'bg-slate-100 text-slate-700 ring-1 ring-slate-200'
+    }
+    if (normalized.includes('annual')) {
+      return 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200/70'
+    }
+    return 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200/70'
+  }
+
+  const getLeaveStatusBadge = (status) => {
+    const normalized = String(status || 'Pending').toLowerCase()
+    if (normalized === 'approved') {
+      return {
+        wrapper: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/70',
+        dot: 'bg-emerald-500',
+      }
+    }
+    if (normalized === 'rejected') {
+      return {
+        wrapper: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200/70',
+        dot: 'bg-rose-500',
+      }
+    }
+    return {
+      wrapper: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200/70',
+      dot: 'bg-amber-500',
+    }
+  }
+
   /*
    * =========================================================
    * RENDER
@@ -609,28 +704,29 @@ function HRDashboard() {
    */
 
   return (
-    <div className="min-h-full bg-[#F7F8FA] p-4 sm:p-6 lg:p-8">
-      {/* =====================================================
-          SHARED PAGE HEADER
-      ===================================================== */}
+    <div className="min-h-full bg-[#F3F4F6] text-slate-950">
+      <main className="w-full max-w-[1600px] px-5 py-6 sm:px-8">
+        {/* =====================================================
+            SHARED PAGE HEADER
+        ===================================================== */}
 
-      <PageTitle
-        eyebrow="Welcome to your HR workspace"
-        title="HR Dashboard"
-        description="Overview of your company's workforce and HR activities."
-        action={
-          <Button
-            type="button"
-            variant="primary"
-            size="lg"
-            icon={ArrowUpRight}
-            onClick={() => { window.location.href = '/hr-manager/reports' }}
-          >
-            View Reports
-          </Button>
-        }
-        className="animate-page-title mb-8"
-      />
+        <PageTitle
+          eyebrow="Welcome to your HR workspace"
+          title="HR Dashboard"
+          description="Overview of your company's workforce, attendance, and leave management activities."
+          action={
+            <Button
+              type="button"
+              variant="primary"
+              size="lg"
+              icon={ArrowUpRight}
+              onClick={() => { window.location.href = '/hr-manager/reports' }}
+            >
+              View Reports
+            </Button>
+          }
+          className="animate-employee-hero mb-8 px-0 py-2"
+        />
       {/* =====================================================
           KPI CARDS
           Animated Total / Active / Leave / Departments
@@ -1375,6 +1471,137 @@ function HRDashboard() {
           </div>
         </section>
       </div>
+
+      {/* =====================================================
+          RECENT LEAVE REQUESTS FROM EMPLOYEES
+      ===================================================== */}
+
+      <div className="mt-6">
+        <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.03)]">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-[#4755AE]">
+                <Clock3 size={20} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-slate-950">
+                    Recent Leave Requests
+                  </h2>
+                  {pendingLeaveCount > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-700 ring-1 ring-amber-200">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+                      {pendingLeaveCount} Pending
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-sm text-slate-500">
+                  Employee leave requests submitted for review and approval.
+                </p>
+              </div>
+            </div>
+
+            <a
+              href="/hr-manager/leave"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-[#0092B8] shadow-xs transition hover:border-cyan-300 hover:bg-cyan-50/50"
+            >
+              Manage in Leave
+              <ArrowUpRight size={14} />
+            </a>
+          </div>
+
+          {leaveLoading ? (
+            <div className="px-6 py-12 text-center text-sm text-slate-500">
+              Loading leave requests...
+            </div>
+          ) : leaveRequests.length === 0 ? (
+            <div className="px-6 py-12 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+                <CalendarCheck size={20} />
+              </div>
+              <p className="mt-3 text-sm font-semibold text-slate-700">
+                No leave requests submitted yet
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                Leave requests submitted by employees from the portal will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table className="w-full min-w-[750px]">
+                <thead>
+                  <tr className="bg-slate-50/70">
+                    <th className="px-4 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">#</th>
+                    <th className="px-6 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">Employee</th>
+                    <th className="px-4 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">Department</th>
+                    <th className="px-4 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">Leave Type</th>
+                    <th className="px-4 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">Duration</th>
+                    <th className="px-4 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">Days</th>
+                    <th className="px-4 py-3.5 text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">Status</th>
+                    <th className="w-20 px-4 py-3.5 text-right text-[11px] font-bold uppercase tracking-wider text-slate-400">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaveRequests.slice(0, 6).map((req, index) => {
+                    const statusConfig = getLeaveStatusBadge(req.approvalStatus)
+                    const initials = (req.employeeName || 'EM')
+                      .split(' ')
+                      .map((p) => p[0])
+                      .join('')
+                      .slice(0, 2)
+                      .toUpperCase()
+
+                    return (
+                      <tr key={req.id || index} className="group border-b border-slate-100 last:border-0 transition-colors hover:bg-slate-50/70">
+                        <td className="px-4 py-4 text-xs font-semibold text-slate-400">{index + 1}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${avatarColors[index % avatarColors.length]}`}>
+                              {initials}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-slate-900">{req.employeeName || 'Employee'}</p>
+                              <p className="mt-0.5 truncate text-xs text-slate-400">{req.employeeId || 'ID N/A'}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-sm font-medium text-slate-600">{req.department || '—'}</td>
+                        <td className="px-4 py-4">
+                          <span className={`inline-flex rounded-md px-2.5 py-1 text-xs font-semibold ${getLeaveTypeBadge(req.leaveType)}`}>
+                            {req.leaveType || 'General Leave'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-xs text-slate-600">
+                          {req.startDate} → {req.endDate}
+                        </td>
+                        <td className="px-4 py-4 text-xs font-bold text-slate-800">
+                          {req.days ? `${req.days} day${req.days === 1 ? '' : 's'}` : '—'}
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ${statusConfig.wrapper}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${statusConfig.dot}`} />
+                            {req.approvalStatus || 'Pending'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => navigate('/hr-manager/leave')}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-[#0092B8] hover:text-[#0092B8]"
+                          >
+                            Review
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </Table>
+            </div>
+          )}
+        </section>
+      </div>
+      </main>
       <style>{`
         @keyframes dashboardHeaderIn {
           from { opacity: 0; transform: translateY(-10px); }

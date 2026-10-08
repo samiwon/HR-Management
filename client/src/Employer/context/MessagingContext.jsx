@@ -38,6 +38,39 @@ function initialsFromName(name = '') {
     .join('')
 }
 
+function playChime() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext
+    if (!AudioContext) return
+    const ctx = new AudioContext()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime) // D5
+    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12) // A5
+    gain.gain.setValueAtTime(0.08, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start()
+    osc.stop(ctx.currentTime + 0.35)
+  } catch {}
+}
+
+function showDesktopNotification(title, body) {
+  try {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        new Notification(title, { body })
+      } else if (Notification.permission === 'default') {
+        Notification.requestPermission().then((perm) => {
+          if (perm === 'granted') new Notification(title, { body })
+        })
+      }
+    }
+  } catch {}
+}
+
 const STORAGE_KEY = 'yanol_chat_shared_store_v1'
 
 function getLocalSharedStore() {
@@ -56,33 +89,48 @@ function saveLocalSharedStore(store) {
 
 export function MessagingProvider({ children, portalType = 'employer' }) {
   const isHR = portalType === 'hr'
-  const [currentUser] = useState(() => {
+  const [currentUser, setCurrentUser] = useState(() => {
     const authUser = getUser()
-    if (isHR) {
-      return {
-        id: '2',
-        name: authUser?.role === 'HR_MANAGER' ? authUser.name : 'Sarah Jenkins',
-        email: 'hr@yanol.com',
-        role: 'HR_MANAGER',
-        roleLabel: 'HR Manager',
-        employeeId: 'HR-001',
-        initials: 'SJ',
-      }
-    }
+    const isHRUser =
+      isHR ||
+      ['HR_MANAGER', 'HR_ADMIN', 'ADMIN'].includes(String(authUser?.role || '').toUpperCase())
     return {
-      id: String(authUser?.id || '1'),
-      name: authUser?.name || 'Alex Johnson',
-      email: authUser?.email || 'employer@yanol.com',
-      role: authUser?.role || 'EMPLOYER',
-      roleLabel: 'Employer',
-      employeeId: String(authUser?.id || 'EMP-001'),
-      initials: initialsFromName(authUser?.name || 'Alex Johnson'),
+      id: String(authUser?.id || (isHRUser ? '2' : '7')),
+      name: authUser?.name || (isHRUser ? 'HR Admin' : 'Employee'),
+      email: authUser?.email || (isHRUser ? 'hradmin@yanol.com' : 'employee@yanol.com'),
+      role: authUser?.role || (isHRUser ? 'HR_ADMIN' : 'EMPLOYEE'),
+      roleLabel: isHRUser ? 'HR Admin' : 'Employee',
+      employeeId: String(authUser?.employeeId || authUser?.id || (isHRUser ? 'HR-001' : 'EMP-001')),
+      initials: initialsFromName(authUser?.name || (isHRUser ? 'HR' : 'EM')),
     }
   })
+
+  useEffect(() => {
+    const onStorageChange = () => {
+      const authUser = getUser()
+      if (authUser) {
+        const isHRUser =
+          isHR ||
+          ['HR_MANAGER', 'HR_ADMIN', 'ADMIN'].includes(String(authUser?.role || '').toUpperCase())
+        setCurrentUser({
+          id: String(authUser.id),
+          name: authUser.name || (isHRUser ? 'HR Admin' : 'Employee'),
+          email: authUser.email,
+          role: authUser.role,
+          roleLabel: isHRUser ? 'HR Admin' : 'Employee',
+          employeeId: String(authUser.employeeId || authUser.id),
+          initials: initialsFromName(authUser.name || ''),
+        })
+      }
+    }
+    window.addEventListener('storage', onStorageChange)
+    return () => window.removeEventListener('storage', onStorageChange)
+  }, [isHR])
 
   const [contacts, setContacts] = useState([])
   const [threads, setThreads] = useState({})
   const [notifications, setNotifications] = useState([])
+  const [incomingToast, setIncomingToast] = useState(null)
 
   const upsertAnnouncementNotifications = useCallback((announcements) => {
     if (!Array.isArray(announcements)) return
@@ -198,8 +246,20 @@ export function MessagingProvider({ children, portalType = 'employer' }) {
           setContacts(colored)
         }
 
+        const validIds = new Set(colored.map((c) => String(c.id)))
+        const validStoreThreads = {}
+        if (store.threads) {
+          Object.keys(store.threads).forEach((id) => {
+            if (validIds.has(String(id))) {
+              validStoreThreads[id] = store.threads[id]
+            }
+          })
+        }
+        store.threads = validStoreThreads
+        saveLocalSharedStore(store)
+
         const settled = await Promise.allSettled(colored.map((c) => fetchThreadApi(c.id)))
-        const initialThreads = { ...(store.threads || {}) }
+        const initialThreads = { ...validStoreThreads }
         colored.forEach((c, i) => {
           if (settled[i].status === 'fulfilled' && Array.isArray(settled[i].value.messages)) {
             initialThreads[c.id] = settled[i].value.messages
@@ -207,96 +267,94 @@ export function MessagingProvider({ children, portalType = 'employer' }) {
         })
         setThreads(initialThreads)
       }
-    } catch {
-      // Fallback in demo mode
-      if (isHR) {
-        const defaultContacts = [
-          { id: '1', name: 'Alex Johnson', email: 'employer@yanol.com', role: 'EMPLOYER', roleLabel: 'Employer', initials: 'AJ', color: 'bg-sky-500', online: true, unread: 0, lastMessage: null },
-        ]
-        setContacts((prev) => (prev.length > 0 ? prev : defaultContacts))
-      } else {
-        // For employer, check if HR conversation has messages
-        const hrThread = (store.threads && store.threads['2']) || []
-        if (hrThread.length > 0) {
-          const last = hrThread[hrThread.length - 1]
-          setContacts([
-            {
-              id: '2',
-              name: 'Sarah Jenkins',
-              email: 'hr@yanol.com',
-              role: 'HR_MANAGER',
-              roleLabel: 'HR Manager',
-              initials: 'SJ',
-              color: 'bg-violet-500',
-              online: true,
-              unread: 0,
-              lastMessage: {
-                text: last.text,
-                from: last.from,
-                time: last.time,
-              },
-            },
-          ])
-        } else {
-          setContacts([])
-        }
-      }
+    } catch (err) {
+      console.error('Failed to load contacts and threads:', err)
     }
   }, [isHR])
 
+  const handleMessageRead = useCallback(({ contactId }) => {
+    const cId = String(contactId)
+    setThreads((prev) => {
+      const list = prev[cId] || []
+      const updated = list.map((m) => (m.from === 'me' ? { ...m, read: true, status: 'read' } : m))
+      return { ...prev, [cId]: updated }
+    })
+    setContacts((prev) =>
+      prev.map((c) =>
+        String(c.id) === cId && c.lastMessage?.from === 'me'
+          ? { ...c, lastMessage: { ...c.lastMessage, read: true, status: 'read' } }
+          : c
+      )
+    )
+  }, [])
+
   const handleIncoming = useCallback(
-    ({ contactId, message }) => {
+    ({ contactId, message, senderName }) => {
       const cId = String(contactId)
       upsertMessage(cId, message)
 
-      const existingContact = contactsRef.current.find((c) => String(c.id) === cId)
-      if (existingContact) {
-        setContacts((prev) => {
-          const updated = prev.map((c) =>
-            String(c.id) === cId
-              ? {
-                  ...c,
-                  unread: message.from === 'them' ? (c.unread || 0) + 1 : c.unread,
-                  lastMessage: {
-                    text: message.text || (message.attachment ? `📎 ${message.attachment.name}` : ''),
-                    from: message.from,
-                    time: message.time,
-                  },
-                }
-              : c
-          )
-          return [
-            ...updated.filter((c) => String(c.id) === cId),
-            ...updated.filter((c) => String(c.id) !== cId),
-          ]
+      if (message.from === 'them') {
+        playChime()
+        const name = senderName || (isHR ? 'Employee' : 'HR Admin')
+        showDesktopNotification(`New message from ${name}`, message.text || 'Sent an attachment')
+        setIncomingToast({
+          id: `toast-${Date.now()}`,
+          contactId: cId,
+          name,
+          text: message.text || (message.attachment ? `📎 ${message.attachment.name}` : 'New message'),
+          time: message.time || 'Just now',
         })
-      } else {
-        // Automatically add the sender contact so the conversation appears immediately
-        const newContact = {
-          id: cId,
-          name: isHR ? (message.senderName || 'Employer') : 'Sarah Jenkins (HR)',
-          email: isHR ? 'employer@yanol.com' : 'hr@yanol.com',
-          role: isHR ? 'EMPLOYER' : 'HR_MANAGER',
-          roleLabel: isHR ? 'Employer' : 'HR Manager',
-          isHR: !isHR,
-          initials: isHR ? 'AJ' : 'SJ',
-          color: 'bg-sky-500',
-          online: true,
-          unread: message.from === 'them' ? 1 : 0,
-          lastMessage: {
-            text: message.text || (message.attachment ? `📎 ${message.attachment.name}` : ''),
-            from: message.from,
-            time: message.time,
-          },
-        }
-        setContacts((prev) => [newContact, ...prev])
       }
+
+      setContacts((prev) => {
+        const existingIndex = prev.findIndex((c) => String(c.id) === cId)
+        let updatedContact
+        if (existingIndex !== -1) {
+          const old = prev[existingIndex]
+          updatedContact = {
+            ...old,
+            unread: message.from === 'them' ? (old.unread || 0) + 1 : old.unread,
+            lastMessage: {
+              id: message.id,
+              text: message.text || (message.attachment ? `📎 ${message.attachment.name}` : ''),
+              from: message.from,
+              time: message.time,
+              createdAt: message.createdAt || new Date().toISOString(),
+              read: Boolean(message.read),
+              status: message.status || (message.read ? 'read' : 'delivered'),
+            },
+          }
+        } else {
+          updatedContact = {
+            id: cId,
+            name: senderName || (isHR ? 'Employee' : 'HR Admin'),
+            email: isHR ? 'employee@yanol.com' : 'hradmin@yanol.com',
+            role: isHR ? 'EMPLOYEE' : 'HR_ADMIN',
+            roleLabel: isHR ? 'Employee' : 'HR Admin',
+            isHR: !isHR,
+            initials: initialsFromName(senderName || (isHR ? 'EM' : 'HR')),
+            color: AVATAR_COLORS[prev.length % AVATAR_COLORS.length],
+            online: true,
+            unread: message.from === 'them' ? 1 : 0,
+            lastMessage: {
+              id: message.id,
+              text: message.text || (message.attachment ? `📎 ${message.attachment.name}` : ''),
+              from: message.from,
+              time: message.time,
+              createdAt: message.createdAt || new Date().toISOString(),
+              read: Boolean(message.read),
+              status: message.status || (message.read ? 'read' : 'delivered'),
+            },
+          }
+        }
+        return [updatedContact, ...prev.filter((c) => String(c.id) !== cId)]
+      })
 
       if (message.from === 'them') {
         setNotifications((prev) => [
           {
             id: `n-${message.id}-${Date.now()}`,
-            title: `New message from ${isHR ? 'Employer' : 'HR'}`,
+            title: `New message from ${senderName || (isHR ? 'Employee' : 'HR Admin')}`,
             message: message.text || (message.attachment ? `Shared a file: ${message.attachment.name}` : ''),
             time: 'Now',
             unread: true,
@@ -365,6 +423,7 @@ export function MessagingProvider({ children, portalType = 'employer' }) {
     const socket = connectSocket()
     if (socket) {
       socket.on('message:new', handleIncoming)
+      socket.on('message:read', handleMessageRead)
       socket.on('message:updated', handleMessageUpdated)
       socket.on('message:deleted', handleMessageDeleted)
       socket.on('presence', handlePresence)
@@ -382,18 +441,18 @@ export function MessagingProvider({ children, portalType = 'employer' }) {
           const { senderPortal, targetContactId, message, senderName } = payload
 
           if (isHR && senderPortal === 'employer') {
-            // HR receives message sent by Employee
             handleIncoming({
               contactId: targetContactId || '1',
               message: { ...message, from: 'them', senderName },
             })
           } else if (!isHR && senderPortal === 'hr') {
-            // Employee receives message sent by HR
             handleIncoming({
               contactId: '2',
-              message: { ...message, from: 'them', senderName: 'Sarah Jenkins (HR)' },
+              message: { ...message, from: 'them', senderName: 'HR Admin' },
             })
           }
+        } else if (type === 'MESSAGE_READ' && payload) {
+          handleMessageRead({ contactId: payload.contactId })
         } else if (type === 'MESSAGE_UPDATED' && payload) {
           upsertMessage(String(payload.contactId), payload.message)
         } else if (type === 'MESSAGE_DELETED' && payload) {
@@ -407,6 +466,7 @@ export function MessagingProvider({ children, portalType = 'employer' }) {
     return () => {
       if (socket) {
         socket.off('message:new', handleIncoming)
+        socket.off('message:read', handleMessageRead)
         socket.off('message:updated', handleMessageUpdated)
         socket.off('message:deleted', handleMessageDeleted)
         socket.off('presence', handlePresence)
@@ -422,7 +482,7 @@ export function MessagingProvider({ children, portalType = 'employer' }) {
         channelRef.current = null
       }
     }
-  }, [handleIncoming, handlePresence, handleMessageUpdated, handleMessageDeleted, handleAnnouncement, handleAnnouncementDeleted, loadAnnouncements, removeMessages, upsertMessage, isHR, reloadContactsAndThreads])
+  }, [handleIncoming, handleMessageRead, handlePresence, handleMessageUpdated, handleMessageDeleted, handleAnnouncement, handleAnnouncementDeleted, loadAnnouncements, removeMessages, upsertMessage, isHR, reloadContactsAndThreads])
 
   const sendMessage = useCallback(
     async (contactId, text, options = {}) => {
@@ -732,8 +792,8 @@ export function MessagingProvider({ children, portalType = 'employer' }) {
     }
   }, [])
 
-  const totalUnread = Object.values(threads).reduce(
-    (sum, msgs) => sum + msgs.filter((m) => m.from === 'them' && !m.read).length,
+  const totalUnread = contacts.reduce(
+    (sum, c) => sum + (threads[String(c.id)] || []).filter((m) => m.from === 'them' && !m.read).length,
     0
   )
 
@@ -742,11 +802,17 @@ export function MessagingProvider({ children, portalType = 'employer' }) {
 
   const unreadNotifications = notifications.filter((n) => n.unread).length
 
+  const dismissToast = useCallback(() => {
+    setIncomingToast(null)
+  }, [])
+
   const value = {
     currentUser,
     contacts,
     threads,
     notifications,
+    incomingToast,
+    dismissToast,
     totalUnread,
     unreadByContact,
     unreadNotifications,

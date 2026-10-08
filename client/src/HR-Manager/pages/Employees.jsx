@@ -23,6 +23,8 @@ import {
   Link2,
   FileText,
   Download,
+  Archive,
+  RotateCcw,
 } from 'lucide-react'
 
 import { PageTitle, Table, TableRowMenu } from '../../components/ui'
@@ -34,22 +36,13 @@ import TableDataTools from '../components/TableDataTools'
 
 const API_URL = 'http://localhost:4000/api/hr-manager'
 
-const EMPLOYMENT_TYPES = [
-  'Permanent',
-  'Contractual',
-  'Intern',
-]
+const fallback_EMPLOYMENT_TYPES = ['Permanent', 'Contractual', 'Intern']
 
-const STATUSES = ['Active']
+const fallback_STATUSES = ['Active', 'On Leave', 'Resigned', 'Terminated', 'Archived']
 
-const GENDERS = [
-  'Male',
-  'Female',
-]
+const fallback_GENDERS = ['Male', 'Female']
 
-const DEFAULT_DEPARTMENTS = [
-  'HR',
-]
+const fallback_DEPARTMENTS = ['Administration', 'Finance', 'Human Resources', 'IT', 'Logistics', 'Operations', 'Procurement', 'Sales & Marketing']
 
 const ETHIOPIAN_BANKS = [
   'Commercial Bank of Ethiopia (CBE)',
@@ -329,7 +322,7 @@ function normalizeEmployee(employee) {
 function statusClasses(status) {
   switch (status) {
     case 'Active':
-      return 'text-emerald-700'
+      return 'bg-emerald-50 text-emerald-700'
 
     case 'On Leave':
       return 'bg-amber-50 text-amber-700'
@@ -337,8 +330,14 @@ function statusClasses(status) {
     case 'Resigned':
       return 'bg-slate-100 text-slate-600'
 
+    case 'Terminated':
+      return 'bg-rose-50 text-rose-700'
+
+    case 'Archived':
+      return 'bg-purple-100 text-purple-700 ring-1 ring-purple-200'
+
     default:
-      return 'bg-red-50 text-red-700'
+      return 'bg-slate-100 text-slate-700'
   }
 }
 
@@ -538,8 +537,8 @@ function EmployeeModal({
 
     const value =
       name === 'firstName' ||
-      name === 'lastName' ||
-      name === 'grandfatherName'
+        name === 'lastName' ||
+        name === 'grandfatherName'
         ? rawValue.replace(/[^\p{L}\s]/gu, '')
         : rawValue
 
@@ -802,7 +801,7 @@ function EmployeeModal({
                     value={form.gender}
                     onChange={handleChange}
                   >
-                    {GENDERS.map(
+                    {(dynamicSettings?.genders || fallback_GENDERS).map(
                       (gender) => (
                         <option
                           key={gender}
@@ -921,7 +920,7 @@ function EmployeeModal({
                     value={form.employmentType}
                     onChange={handleChange}
                   >
-                    {EMPLOYMENT_TYPES.map(
+                    {(dynamicSettings?.employmentTypes || fallback_EMPLOYMENT_TYPES).map(
                       (type) => (
                         <option
                           key={type}
@@ -941,7 +940,7 @@ function EmployeeModal({
                     value={form.status}
                     onChange={handleChange}
                   >
-                    {STATUSES.map(
+                    {(dynamicSettings?.employmentStatuses || fallback_STATUSES).map(
                       (status) => (
                         <option
                           key={status}
@@ -1146,6 +1145,7 @@ function EmployeeModal({
 ========================================================= */
 
 function AddEmployeeDrawer({
+  dynamicSettings,
   departments,
   employees,
   onClose,
@@ -1156,8 +1156,8 @@ function AddEmployeeDrawer({
   const [settingLists, setSettingLists] = useState({
     departments: departments || [],
     jobTitles: [],
-    employmentTypes: EMPLOYMENT_TYPES,
-    employmentStatuses: STATUSES,
+    employmentTypes: (dynamicSettings?.employmentTypes || fallback_EMPLOYMENT_TYPES),
+    employmentStatuses: (dynamicSettings?.employmentStatuses || fallback_STATUSES),
   })
   const [addingSetting, setAddingSetting] = useState('')
   const [newSettingValue, setNewSettingValue] = useState('')
@@ -1167,15 +1167,17 @@ function AddEmployeeDrawer({
 
   useEffect(() => {
     let active = true
-    fetch(`${API_URL}/settings`)
+    fetch(`${API_URL}/settings`, {
+      headers: authHeaders(),
+    })
       .then((response) => response.json())
       .then((data) => {
         if (!active) return
         setSettingLists({
-          departments: data.departments || [],
+          departments: data.departments || departments || [],
           jobTitles: data.jobTitles || [],
-          employmentTypes: data.employmentTypes || EMPLOYMENT_TYPES,
-          employmentStatuses: STATUSES,
+          employmentTypes: data.employmentTypes || (dynamicSettings?.employmentTypes || fallback_EMPLOYMENT_TYPES),
+          employmentStatuses: data.employmentStatuses || (dynamicSettings?.employmentStatuses || fallback_STATUSES),
         })
         setForm((current) => ({
           ...current,
@@ -1184,9 +1186,9 @@ function AddEmployeeDrawer({
           status: 'Active',
         }))
       })
-      .catch(() => {})
+      .catch(() => { })
     return () => { active = false }
-  }, [])
+  }, [departments])
 
   async function addSettingOption(key) {
     const value = newSettingValue.trim()
@@ -1198,12 +1200,14 @@ function AddEmployeeDrawer({
       return
     }
     try {
-      const currentResponse = await fetch(`${API_URL}/settings`)
+      const currentResponse = await fetch(`${API_URL}/settings`, {
+        headers: authHeaders(),
+      })
       const currentSettings = await currentResponse.json()
       const updatedList = [...(currentSettings[key] || currentList), value]
       const saveResponse = await fetch(`${API_URL}/settings`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ ...currentSettings, [key]: updatedList }),
       })
       const savedSettings = await saveResponse.json()
@@ -1268,8 +1272,8 @@ function AddEmployeeDrawer({
 
     const value =
       name === 'firstName' ||
-      name === 'lastName' ||
-      name === 'grandfatherName'
+        name === 'lastName' ||
+        name === 'grandfatherName'
         ? rawValue.replace(/[^\p{L}\s]/gu, '')
         : rawValue
 
@@ -1646,32 +1650,30 @@ function AddEmployeeDrawer({
                           )
                         }
                       }}
-                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition ${
-                        step === item.number
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition ${step === item.number
                           ? 'bg-[#4755AE] text-white'
                           : step >
-                              item.number
+                            item.number
                             ? 'bg-emerald-100 text-emerald-700'
                             : 'bg-slate-100 text-slate-400'
-                      }`}
+                        }`}
                     >
                       {item.number}
                     </button>
 
                     <span
-                      className={`hidden truncate text-xs font-semibold sm:block ${
-                        step === item.number
+                      className={`hidden truncate text-xs font-semibold sm:block ${step === item.number
                           ? 'text-slate-900'
                           : 'text-slate-400'
-                      }`}
+                        }`}
                     >
                       {item.title}
                     </span>
 
                     {index <
                       steps.length - 1 && (
-                      <div className="h-px flex-1 bg-slate-200" />
-                    )}
+                        <div className="h-px flex-1 bg-slate-200" />
+                      )}
 
                   </div>
                 ),
@@ -1720,7 +1722,7 @@ function AddEmployeeDrawer({
                       value={form.gender}
                       onChange={handleChange}
                     >
-                      {GENDERS.map(
+                      {(dynamicSettings?.genders || fallback_GENDERS).map(
                         (gender) => (
                           <option
                             key={gender}
@@ -2707,6 +2709,12 @@ function EmployeeViewModal({
                 {getEmployeeId(employee)}
               </p>
 
+              {employee.terminatedAt && (
+                <p className="mt-1 text-xs font-semibold text-rose-600">
+                  Terminated: {formatDate(employee.terminatedAt)}
+                </p>
+              )}
+
             </div>
           </div>
 
@@ -2827,12 +2835,11 @@ function EmployeeViewModal({
               label="Bank"
               value={
                 employee.bankName ||
-                employee.bankAccount
-                  ? `${employee.bankName || 'Bank'}${
-                      employee.bankAccount
-                        ? ` · ${employee.bankAccount}`
-                        : ''
-                    }`
+                  employee.bankAccount
+                  ? `${employee.bankName || 'Bank'}${employee.bankAccount
+                    ? ` · ${employee.bankAccount}`
+                    : ''
+                  }`
                   : '—'
               }
             />
@@ -2862,31 +2869,31 @@ function EmployeeViewModal({
           </div>
 
           {onResetPassword && (
-          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/70 p-5">
-            <div className="flex items-center gap-2">
-              <KeyRound size={16} className="text-amber-700" />
-              <p className="text-xs font-bold uppercase tracking-wide text-amber-700">Employee Login Password</p>
-            </div>
-            <p className="mt-2 text-xs leading-5 text-slate-600">
-              Reset the login if the employee lost their temporary password. The new one is shown here to pass on, and they must change it after signing in.
-            </p>
-            <button
-              type="button"
-              onClick={resetPasswordForEmployee}
-              disabled={resettingPassword}
-              className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#4755AE] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#3d4998] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <KeyRound size={13} />
-            {resettingPassword ? 'Resetting...' : 'Reset Temporary Password'}
-            </button>
-            {confirmReset && <div className="mt-3 rounded-xl border border-amber-200 bg-white p-3"><p className="text-sm font-semibold text-slate-800">Reset the login password for {name}?</p><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => setConfirmReset(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">Cancel</button><button type="button" onClick={resetPasswordForEmployee} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white">Confirm reset</button></div></div>}
-            {resetPasswordNotice && (
-              <div className="mt-3 rounded-lg border border-amber-200 bg-white p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Temporary password issued</p>
-                <p className="mt-1 text-xs leading-5 text-slate-700">{resetPasswordNotice}</p>
+            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/70 p-5">
+              <div className="flex items-center gap-2">
+                <KeyRound size={16} className="text-amber-700" />
+                <p className="text-xs font-bold uppercase tracking-wide text-amber-700">Employee Login Password</p>
               </div>
-            )}
-          </div>
+              <p className="mt-2 text-xs leading-5 text-slate-600">
+                Reset the login if the employee lost their temporary password. The new one is shown here to pass on, and they must change it after signing in.
+              </p>
+              <button
+                type="button"
+                onClick={resetPasswordForEmployee}
+                disabled={resettingPassword}
+                className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[#4755AE] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#3d4998] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <KeyRound size={13} />
+                {resettingPassword ? 'Resetting...' : 'Reset Temporary Password'}
+              </button>
+              {confirmReset && <div className="mt-3 rounded-xl border border-amber-200 bg-white p-3"><p className="text-sm font-semibold text-slate-800">Reset the login password for {name}?</p><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => setConfirmReset(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">Cancel</button><button type="button" onClick={resetPasswordForEmployee} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white">Confirm reset</button></div></div>}
+              {resetPasswordNotice && (
+                <div className="mt-3 rounded-lg border border-amber-200 bg-white p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Temporary password issued</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-700">{resetPasswordNotice}</p>
+                </div>
+              )}
+            </div>
           )}
 
           {employee.notes && (
@@ -2940,6 +2947,7 @@ function EmployeeCard({
   onEdit,
   onView,
   onDelete,
+  onRestore,
 }) {
   const name =
     getEmployeeName(employee)
@@ -3072,13 +3080,13 @@ function EmployeeCard({
       <div className={onEdit ? 'mt-4 grid grid-cols-2 gap-2' : 'mt-4 grid gap-2'}>
 
         {onEdit && (
-        <button
-          type="button"
-          onClick={() => onEdit(employee)}
-          className="rounded-xl bg-blue-100 px-3 py-2.5 text-xs font-bold text-[#4755AE] transition hover:bg-blue-200"
-        >
-          Edit
-        </button>
+          <button
+            type="button"
+            onClick={() => onEdit(employee)}
+            className="rounded-xl bg-blue-100 px-3 py-2.5 text-xs font-bold text-[#4755AE] transition hover:bg-blue-200"
+          >
+            Edit
+          </button>
         )}
 
         <button
@@ -3091,15 +3099,28 @@ function EmployeeCard({
 
       </div>
 
-      {onDelete && (
-      <button
-        type="button"
-        onClick={() => onDelete(employee)}
-        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-semibold text-slate-400 transition hover:bg-red-50 hover:text-red-600"
-      >
-        <Trash2 size={13} />
-        Delete Employee
-      </button>
+      {employee.isArchived || employee.status === 'Terminated' || employee.status === 'Archived' ? (
+        onRestore && (
+          <button
+            type="button"
+            onClick={() => onRestore(employee)}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-purple-50 px-3 py-2 text-[11px] font-semibold text-purple-700 transition hover:bg-purple-100"
+          >
+            <RotateCcw size={13} />
+            Restore Employee
+          </button>
+        )
+      ) : (
+        onDelete && (
+          <button
+            type="button"
+            onClick={() => onDelete(employee)}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50"
+          >
+            <Trash2 size={13} />
+            Delete Employee
+          </button>
+        )
       )}
 
     </article>
@@ -3111,6 +3132,7 @@ function EmployeeTable({
   onEdit,
   onView,
   onDelete,
+  onRestore,
   canEdit,
   onQuickUpdate,
   selectedIds,
@@ -3123,7 +3145,7 @@ function EmployeeTable({
   const [savingRowId, setSavingRowId] = useState(null)
   const [actionMenuId, setActionMenuId] = useState(null)
 
-  const statusOptions = ['Active', 'On Leave', 'Resigned']
+  const statusOptions = ['Active', 'On Leave', 'Resigned', 'Terminated', 'Archived']
 
   function startRowEdit(employee) {
     setEditingRowId(employee.id)
@@ -3225,7 +3247,7 @@ function EmployeeTable({
                         ))}
                       </select>
                     ) : (
-                      <span className={`${employee.status === 'Active' ? 'text-emerald-700' : `rounded-full px-2.5 py-1 ${statusClasses(employee.status)}`} text-[10px] font-bold uppercase tracking-wide`}>
+                      <span className={`rounded-full px-2.5 py-1 ${statusClasses(employee.status)} text-[10px] font-bold uppercase tracking-wide`}>
                         {employee.status}
                       </span>
                     )}
@@ -3272,18 +3294,34 @@ function EmployeeTable({
                               <span>Edit</span>
                             </button>
                           )}
-                          {onDelete && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActionMenuId(null)
-                                onDelete(employee)
-                              }}
-                              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-600 transition hover:bg-red-50"
-                            >
-                              <Trash2 size={14} className="text-red-500" />
-                              <span>Delete</span>
-                            </button>
+                          {(employee.isArchived || employee.status === 'Terminated' || employee.status === 'Archived') ? (
+                            onRestore && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActionMenuId(null)
+                                  onRestore(employee)
+                                }}
+                                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-semibold text-purple-600 transition hover:bg-purple-50"
+                              >
+                                <RotateCcw size={14} className="text-purple-500" />
+                                <span>Restore</span>
+                              </button>
+                            )
+                          ) : (
+                            onDelete && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActionMenuId(null)
+                                  onDelete(employee)
+                                }}
+                                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-semibold text-rose-600 transition hover:bg-rose-50"
+                              >
+                                <Trash2 size={14} className="text-rose-500" />
+                                <span>Delete Employee</span>
+                              </button>
+                            )
                           )}
                         </TableRowMenu>
                       )}
@@ -3328,8 +3366,8 @@ export default function Employees() {
 
   const [successMessage, setSuccessMessage] =
     useState('')
-    const [temporaryCredentials, setTemporaryCredentials] =
-  useState(null)
+  const [temporaryCredentials, setTemporaryCredentials] =
+    useState(null)
 
   const [search, setSearch] =
     useState('')
@@ -3361,7 +3399,21 @@ export default function Employees() {
     useState('card')
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([])
   const [pendingDelete, setPendingDelete] = useState(null)
+  const [dynamicSettings, setDynamicSettings] = useState(null)
 
+  async function loadSettings() {
+    try {
+      const response = await fetch(`${API_URL}/settings`, {
+        headers: authHeaders(),
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setDynamicSettings(data)
+      }
+    } catch (err) {
+      console.error('Load settings error:', err)
+    }
+  }
 
   async function loadEmployees() {
     try {
@@ -3372,6 +3424,7 @@ export default function Employees() {
         `${API_URL}/employees`,
         {
           cache: 'no-store',
+          headers: authHeaders(),
         },
       )
 
@@ -3381,8 +3434,8 @@ export default function Employees() {
       if (!response.ok) {
         throw new Error(
           data?.message ||
-            data?.error ||
-            'Unable to load employees.',
+          data?.error ||
+          'Unable to load employees.',
         )
       }
 
@@ -3399,7 +3452,7 @@ export default function Employees() {
 
       setError(
         err.message ||
-          'Unable to load employees.',
+        'Unable to load employees.',
       )
     } finally {
       setLoading(false)
@@ -3456,24 +3509,22 @@ export default function Employees() {
 
   useEffect(() => {
     loadEmployees()
+    loadSettings()
   }, [])
 
   const departments = useMemo(() => {
-    const values = [
-      ...DEFAULT_DEPARTMENTS,
-
-      ...employees
-        .map(
-          (employee) =>
-            employee.department,
-        )
-        .filter(Boolean),
-    ]
+    const fromSettings = dynamicSettings?.departments || (dynamicSettings?.departments || fallback_DEPARTMENTS)
+    const fromEmployees = employees
+      .map(
+        (employee) =>
+          employee.department,
+      )
+      .filter(Boolean)
 
     return Array.from(
-      new Set(values),
+      new Set([...fromSettings, ...fromEmployees]),
     )
-  }, [employees])
+  }, [dynamicSettings, employees])
 
   const filteredEmployees =
     useMemo(() => {
@@ -3500,8 +3551,8 @@ export default function Employees() {
           const position =
             String(
               employee.position ||
-                employee.jobTitle ||
-                '',
+              employee.jobTitle ||
+              '',
             ).toLowerCase()
 
           const matchesSearch =
@@ -3513,14 +3564,18 @@ export default function Employees() {
 
           const matchesDepartment =
             departmentFilter ===
-              'All' ||
+            'All' ||
             employee.department ===
-              departmentFilter
+            departmentFilter
 
           const matchesStatus =
-            statusFilter === 'All' ||
-            employee.status ===
-              statusFilter
+            statusFilter === 'All'
+              ? !employee.isArchived && employee.status !== 'Archived' && employee.status !== 'Terminated'
+              : statusFilter === 'Archived'
+                ? Boolean(employee.isArchived || employee.status === 'Archived' || employee.status === 'Terminated')
+                : statusFilter === 'Terminated'
+                  ? employee.status === 'Terminated'
+                  : employee.status === statusFilter && !employee.isArchived
 
           return (
             matchesSearch &&
@@ -3539,12 +3594,13 @@ export default function Employees() {
   const activeCount =
     employees.filter(
       (employee) =>
-        employee.status === 'Active',
+        !employee.isArchived && employee.status === 'Active',
     ).length
 
   const onLeaveCount =
     employees.filter(
       (employee) =>
+        !employee.isArchived &&
         employee.status ===
         'On Leave',
     ).length
@@ -3552,8 +3608,15 @@ export default function Employees() {
   const resignedCount =
     employees.filter(
       (employee) =>
+        !employee.isArchived &&
         employee.status ===
         'Resigned',
+    ).length
+
+  const archivedCount =
+    employees.filter(
+      (employee) =>
+        employee.isArchived || employee.status === 'Archived' || employee.status === 'Terminated',
     ).length
 
   function openAddModal() {
@@ -3577,300 +3640,300 @@ export default function Employees() {
     setEditingEmployee(null)
   }
 
-async function handleSave(employeeData) {
-  try {
-    setSaving(true)
-    setError('')
-    setSuccessMessage('')
-    setTemporaryCredentials(null)
+  async function handleSave(employeeData) {
+    try {
+      setSaving(true)
+      setError('')
+      setSuccessMessage('')
+      setTemporaryCredentials(null)
 
-    const employeeId = employeeData.employeeId?.trim()
+      const employeeId = employeeData.employeeId?.trim()
 
-    if (!employeeId) {
-      throw new Error('Employee ID is required.')
-    }
+      if (!employeeId) {
+        throw new Error('Employee ID is required.')
+      }
 
-    const databaseId =
-      editingEmployee?.id ||
-      employeeData.id ||
-      employeeId
+      const databaseId =
+        editingEmployee?.id ||
+        employeeData.id ||
+        employeeId
 
-    const payload = {
-      id: databaseId,
+      const payload = {
+        id: databaseId,
 
-      employeeId,
+        employeeId,
 
-      name:
-        employeeData.name ||
-        'Unnamed Employee',
+        name:
+          employeeData.name ||
+          'Unnamed Employee',
 
-      gender:
-        employeeData.gender || '',
+        gender:
+          employeeData.gender || '',
 
-      dateOfBirth:
-        employeeData.dateOfBirth || '',
+        dateOfBirth:
+          employeeData.dateOfBirth || '',
 
-      joinDate:
-        employeeData.joinDate ||
-        employeeData.hireDate ||
-        '',
+        joinDate:
+          employeeData.joinDate ||
+          employeeData.hireDate ||
+          '',
 
-      jobTitle:
-        employeeData.jobTitle ||
-        employeeData.position ||
-        '',
+        jobTitle:
+          employeeData.jobTitle ||
+          employeeData.position ||
+          '',
 
-      department:
-        employeeData.department || '',
+        department:
+          employeeData.department || '',
 
-      employmentType:
-        employeeData.employmentType || '',
+        employmentType:
+          employeeData.employmentType || '',
 
-      basicSalary:
-        Number(employeeData.basicSalary || 0),
+        basicSalary:
+          Number(employeeData.basicSalary || 0),
 
-      transportAllowance:
-        Number(
-          employeeData.transportAllowance || 0,
-        ),
+        transportAllowance:
+          Number(
+            employeeData.transportAllowance || 0,
+          ),
 
-      housingAllowance:
-        Number(
-          employeeData.housingAllowance || 0,
-        ),
+        housingAllowance:
+          Number(
+            employeeData.housingAllowance || 0,
+          ),
 
-      mealAllowance:
-        Number(
-          employeeData.mealAllowance || 0,
-        ),
+        mealAllowance:
+          Number(
+            employeeData.mealAllowance || 0,
+          ),
 
-      otherAllowance:
-        Number(
-          employeeData.otherAllowance || 0,
-        ),
+        otherAllowance:
+          Number(
+            employeeData.otherAllowance || 0,
+          ),
 
-      otherDeductions:
-        Number(
-          employeeData.otherDeductions || 0,
-        ),
+        otherDeductions:
+          Number(
+            employeeData.otherDeductions || 0,
+          ),
 
-      loanDeductions:
-        Number(
-          employeeData.loanDeductions || 0,
-        ),
+        loanDeductions:
+          Number(
+            employeeData.loanDeductions || 0,
+          ),
 
-      bankName:
-        employeeData.bankName || '',
+        bankName:
+          employeeData.bankName || '',
 
-      bankAccount:
-        employeeData.bankAccount || '',
+        bankAccount:
+          employeeData.bankAccount || '',
 
-      tin:
-        employeeData.tin || '',
+        tin:
+          employeeData.tin || '',
 
-      pensionId:
-        employeeData.pensionId || '',
+        pensionId:
+          employeeData.pensionId || '',
 
-      phone:
-        employeeData.phone || '',
+        phone:
+          employeeData.phone || '',
 
-      email:
-        employeeData.email || '',
+        email:
+          employeeData.email || '',
 
-      address:
-        employeeData.address || '',
+        address:
+          employeeData.address || '',
 
-      emergencyContact:
-        employeeData.emergencyContact || '',
+        emergencyContact:
+          employeeData.emergencyContact || '',
 
-      employmentStatus:
-        employeeData.employmentStatus ||
-        employeeData.status ||
-        'Active',
+        employmentStatus:
+          employeeData.employmentStatus ||
+          employeeData.status ||
+          'Active',
 
-      exitDate:
-        employeeData.exitDate ||
-        null,
+        exitDate:
+          employeeData.exitDate ||
+          null,
 
-      notes:
-        employeeData.notes || '',
+        notes:
+          employeeData.notes || '',
 
-      status:
-        employeeData.status ||
-        employeeData.employmentStatus ||
-        'Active',
+        status:
+          employeeData.status ||
+          employeeData.employmentStatus ||
+          'Active',
 
-      avatar:
-        employeeData.avatar || '',
+        avatar:
+          employeeData.avatar || '',
 
-      location:
-        employeeData.location || '',
+        location:
+          employeeData.location || '',
 
-      salary:
-        Number(
-          employeeData.salary ||
-          employeeData.basicSalary ||
-          0,
-        ),
+        salary:
+          Number(
+            employeeData.salary ||
+            employeeData.basicSalary ||
+            0,
+          ),
 
-      manager:
-        employeeData.manager || '',
+        manager:
+          employeeData.manager || '',
 
-      roleType:
-        employeeData.roleType || '',
+        roleType:
+          employeeData.roleType || '',
 
-      initials:
-        employeeData.initials ||
-        getInitials(employeeData),
-    }
+        initials:
+          employeeData.initials ||
+          getInitials(employeeData),
+      }
 
-    const isEditing =
-      Boolean(editingEmployee)
+      const isEditing =
+        Boolean(editingEmployee)
 
-    const url = isEditing
-      ? `${API_URL}/employees/${editingEmployee.id}`
-      : `${API_URL}/employees`
+      const url = isEditing
+        ? `${API_URL}/employees/${editingEmployee.id}`
+        : `${API_URL}/employees`
 
-    /*
-     * Both POST /employees and PUT /employees/:id sit behind requireAuth on
-     * the server, so this request has to carry the HR admin's bearer token.
-     *
-     * It used to hand-write its headers as just Content-Type, which meant the
-     * token never left the browser and the server answered a perfectly
-     * signed-in admin with "Authentication required". authHeaders() is the
-     * helper the rest of this file already uses; it is what puts the
-     * Authorization header on the request.
-     */
-    const response = await fetch(
-      url,
-      {
-        method: isEditing
-          ? 'PUT'
-          : 'POST',
+      /*
+       * Both POST /employees and PUT /employees/:id sit behind requireAuth on
+       * the server, so this request has to carry the HR admin's bearer token.
+       *
+       * It used to hand-write its headers as just Content-Type, which meant the
+       * token never left the browser and the server answered a perfectly
+       * signed-in admin with "Authentication required". authHeaders() is the
+       * helper the rest of this file already uses; it is what puts the
+       * Authorization header on the request.
+       */
+      const response = await fetch(
+        url,
+        {
+          method: isEditing
+            ? 'PUT'
+            : 'POST',
 
-        headers: authHeaders({
-          'Content-Type':
-            'application/json',
-        }),
+          headers: authHeaders({
+            'Content-Type':
+              'application/json',
+          }),
 
-        body: JSON.stringify(payload),
-      },
-    )
+          body: JSON.stringify(payload),
+        },
+      )
 
-    const data =
-      await response.json()
+      const data =
+        await response.json()
 
-    if (!response.ok) {
-      throw new Error(
-        describeAuthFailure(response, data) ||
+      if (!response.ok) {
+        throw new Error(
+          describeAuthFailure(response, data) ||
           data?.message ||
           data?.error ||
           'Failed to save employee.',
-      )
-    }
+        )
+      }
 
-    /*
-     * --------------------------------------------------------
-     * EDIT EXISTING EMPLOYEE
-     * --------------------------------------------------------
-     */
+      /*
+       * --------------------------------------------------------
+       * EDIT EXISTING EMPLOYEE
+       * --------------------------------------------------------
+       */
 
-    if (isEditing) {
+      if (isEditing) {
+        const savedEmployee =
+          normalizeEmployee(data)
+
+        setEmployees(
+          (current) =>
+            current.map(
+              (employee) =>
+                employee.id ===
+                  editingEmployee.id
+                  ? savedEmployee
+                  : employee,
+            ),
+        )
+
+        setSuccessMessage(
+          'Employee updated successfully.',
+        )
+
+        setModalOpen(false)
+        setEditingEmployee(null)
+
+        await loadEmployees()
+
+        return
+      }
+
+      /*
+       * --------------------------------------------------------
+       * NEW EMPLOYEE
+       * --------------------------------------------------------
+       *
+       * Backend now returns:
+       *
+       * {
+       *   employee: {...},
+       *   account: {
+       *     email: "...",
+       *     temporaryPassword: "..."
+       *   }
+       * }
+       */
+
       const savedEmployee =
-        normalizeEmployee(data)
+        normalizeEmployee(
+          data.employee,
+        )
 
       setEmployees(
-        (current) =>
-          current.map(
-            (employee) =>
-              employee.id ===
-              editingEmployee.id
-                ? savedEmployee
-                : employee,
-          ),
+        (current) => [
+          ...current,
+          savedEmployee,
+        ],
       )
 
+      if (data.account) {
+        setTemporaryCredentials({
+          employeeId:
+            data.employee?.employeeId ||
+            employeeData.employeeId ||
+            '',
+          email:
+            data.account.email || '',
+          // Nothing is emailed, so the password always comes back here for the
+          // HR Admin to pass on.
+          temporaryPassword:
+            data.account.temporaryPassword || '',
+          employeeName:
+            data.employee?.name ||
+            employeeData.name ||
+            'Employee',
+        })
+      }
+
       setSuccessMessage(
-        'Employee updated successfully.',
+        'Employee and login account created successfully.',
       )
 
       setModalOpen(false)
       setEditingEmployee(null)
 
       await loadEmployees()
-
-      return
-    }
-
-    /*
-     * --------------------------------------------------------
-     * NEW EMPLOYEE
-     * --------------------------------------------------------
-     *
-     * Backend now returns:
-     *
-     * {
-     *   employee: {...},
-     *   account: {
-     *     email: "...",
-     *     temporaryPassword: "..."
-     *   }
-     * }
-     */
-
-    const savedEmployee =
-      normalizeEmployee(
-        data.employee,
+    } catch (err) {
+      console.error(
+        'Save employee error:',
+        err,
       )
 
-    setEmployees(
-      (current) => [
-        ...current,
-        savedEmployee,
-      ],
-    )
-
-    if (data.account) {
-      setTemporaryCredentials({
-        employeeId:
-          data.employee?.employeeId ||
-          employeeData.employeeId ||
-          '',
-        email:
-          data.account.email || '',
-        // Nothing is emailed, so the password always comes back here for the
-        // HR Admin to pass on.
-        temporaryPassword:
-          data.account.temporaryPassword || '',
-        employeeName:
-          data.employee?.name ||
-          employeeData.name ||
-          'Employee',
-      })
-    }
-
-    setSuccessMessage(
-      'Employee and login account created successfully.',
-    )
-
-    setModalOpen(false)
-    setEditingEmployee(null)
-
-    await loadEmployees()
-  } catch (err) {
-    console.error(
-      'Save employee error:',
-      err,
-    )
-
-    setError(
-      err.message ||
+      setError(
+        err.message ||
         'Unable to save employee.',
-    )
-  } finally {
-    setSaving(false)
+      )
+    } finally {
+      setSaving(false)
+    }
   }
-}
 
   async function handleQuickTableUpdate(employee, changes) {
     try {
@@ -3921,10 +3984,6 @@ async function handleSave(employeeData) {
         `${API_URL}/employees/${employee.id}`,
         {
           method: 'DELETE',
-
-          // DELETE /employees/:id is behind requireAuth too. This call sent no
-          // headers at all, so deleting an employee failed with
-          // "Authentication required" even while signed in.
           headers: authHeaders(),
         },
       )
@@ -3935,22 +3994,32 @@ async function handleSave(employeeData) {
       if (!response.ok) {
         throw new Error(
           describeAuthFailure(response, data) ||
-            data?.message ||
-            data?.error ||
-            'Failed to delete employee.',
+          data?.message ||
+          data?.error ||
+          'Failed to delete employee.',
         )
       }
 
-      setEmployees(
-        (current) =>
-          current.filter(
-            (item) =>
-              item.id !== employee.id,
-          ),
+      const currentTimestamp = data?.terminatedAt || new Date().toISOString()
+
+      // When HR clicks Delete Employee, don't actually delete them.
+      // Instead: status = "Terminated", isArchived = true, terminatedAt = current date/time
+      setEmployees((current) =>
+        current.map((item) =>
+          item.id === employee.id
+            ? {
+                ...item,
+                status: 'Terminated',
+                employmentStatus: 'Terminated',
+                isArchived: true,
+                terminatedAt: currentTimestamp,
+              }
+            : item,
+        ),
       )
 
       setSuccessMessage(
-        'Employee deleted successfully.',
+        data?.message || 'Employee terminated and archived successfully. All historical records have been preserved.',
       )
       setPendingDelete(null)
     } catch (err) {
@@ -3961,7 +4030,55 @@ async function handleSave(employeeData) {
 
       setError(
         err.message ||
-          'Unable to delete employee.',
+        'Unable to delete employee.',
+      )
+    }
+  }
+
+  async function handleRestore(employee) {
+    try {
+      setError('')
+      setSuccessMessage('')
+
+      const response = await fetch(
+        `${API_URL}/employees/${employee.id}/restore`,
+        {
+          method: 'POST',
+          headers: authHeaders(),
+        },
+      )
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          describeAuthFailure(response, data) ||
+          data?.message ||
+          data?.error ||
+          'Failed to restore employee.',
+        )
+      }
+
+      setEmployees((current) =>
+        current.map((item) =>
+          item.id === employee.id
+            ? { ...item, isArchived: false, status: 'Active', employmentStatus: 'Active' }
+            : item,
+        ),
+      )
+
+      setSuccessMessage(
+        data?.message || 'Employee restored successfully.',
+      )
+    } catch (err) {
+      console.error(
+        'Restore employee error:',
+        err,
+      )
+
+      setError(
+        err.message ||
+        'Unable to restore employee.',
       )
     }
   }
@@ -3969,16 +4086,37 @@ async function handleSave(employeeData) {
   return (
     <div className="min-h-full bg-[#F3F4F6] text-slate-950">
 
-      {pendingDelete && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-4">
-        <section role="alertdialog" aria-modal="true" aria-labelledby="delete-employee-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-          <h2 id="delete-employee-title" className="text-lg font-bold text-slate-900">Delete employee?</h2>
-          <p className="mt-2 text-sm text-slate-600">Delete {getEmployeeName(pendingDelete)} ({getEmployeeId(pendingDelete)})? This action cannot be undone.</p>
-          <div className="mt-6 flex justify-end gap-3">
-            <button type="button" onClick={() => setPendingDelete(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
-            <button type="button" onClick={() => handleDelete(pendingDelete)} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Delete</button>
-          </div>
-        </section>
-      </div>}
+      {pendingDelete && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-xs">
+          <section role="alertdialog" aria-modal="true" aria-labelledby="delete-employee-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center gap-3 text-rose-600 mb-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-rose-600 ring-1 ring-rose-200">
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h2 id="delete-employee-title" className="text-base font-bold text-slate-900">Delete Employee</h2>
+                <p className="text-xs text-slate-500">Soft-delete with data preservation</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600">
+              Are you sure you want to delete <strong>{getEmployeeName(pendingDelete)}</strong> ({getEmployeeId(pendingDelete)})?
+            </p>
+            <div className="mt-3.5 rounded-xl border border-rose-200/80 bg-rose-50/70 p-3.5 text-xs leading-relaxed text-rose-900">
+              <p className="font-semibold text-rose-950 flex items-center gap-1.5 mb-1">
+                <Check size={14} className="text-rose-700" /> Preservation Guarantee
+              </p>
+              This employee will <strong>not be deleted permanently</strong>. Their status will be set to <strong>Terminated</strong>, archived (<code>isArchived = true</code>), and recorded with the termination timestamp (<code>terminatedAt</code>). All attendance, leave, and payroll records are permanently preserved.
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => setPendingDelete(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition">Cancel</button>
+              <button type="button" onClick={() => handleDelete(pendingDelete)} className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 transition">
+                <Trash2 size={15} />
+                Delete Employee
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       <main className="w-full max-w-[1600px] px-5 py-6 sm:px-8">
 
@@ -4002,10 +4140,10 @@ async function handleSave(employeeData) {
         {/* Summary */}
         <section className="animate-employee-summary mb-9 grid gap-4 bg-[#F3F4F6] p-0 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { key: 'total', title: 'Total Employees', description: 'Employees in the company', value: employees.length, icon: Users, iconClass: 'bg-blue-100 text-blue-600' },
-            { key: 'active', title: 'Active Employees', description: 'Currently working', value: activeCount, icon: Users, iconClass: 'bg-emerald-100 text-emerald-600' },
+            { key: 'active', title: 'Active Roster', description: 'Active employees', value: activeCount, icon: Users, iconClass: 'bg-emerald-100 text-emerald-600' },
             { key: 'leave', title: 'On Leave', description: 'Currently on leave', value: onLeaveCount, icon: BriefcaseBusiness, iconClass: 'bg-orange-100 text-orange-600' },
-            { key: 'resigned', title: 'Resigned', description: 'Left the company', value: resignedCount, icon: UserPlus, iconClass: 'bg-violet-100 text-violet-600' },
+            { key: 'resigned', title: 'Resigned', description: 'Former employees', value: resignedCount, icon: UserPlus, iconClass: 'bg-slate-100 text-slate-600' },
+            { key: 'archived', title: 'Archived Records', description: 'Preserved employee files', value: archivedCount, icon: Archive, iconClass: 'bg-purple-100 text-purple-600' },
           ].map((stat, statIndex) => {
             const StatIcon = stat.icon
             const avatarEmployees = employees.slice(0, 4)
@@ -4019,10 +4157,14 @@ async function handleSave(employeeData) {
             return (
               <div
                 key={stat.key}
-                className={`animate-employee-stat group relative overflow-hidden rounded-[18px] border border-slate-200/80 bg-[#E8F1F9] p-5 shadow-[0_3px_14px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/60 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(15,23,42,0.09)] ${activeSummaryCard === stat.key ? 'animate-employee-stat-click' : ''}`}
+                className={`animate-employee-stat group relative overflow-hidden rounded-[18px] border border-slate-200/80 bg-[#E8F1F9] p-5 shadow-[0_3px_14px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/60 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_30px_rgba(15,23,42,0.09)] cursor-pointer ${activeSummaryCard === stat.key ? 'animate-employee-stat-click' : ''}`}
                 style={{ animationDelay: `${statIndex * 120}ms` }}
                 onClick={() => {
                   setActiveSummaryCard(stat.key)
+                  if (stat.key === 'active') setStatusFilter('Active')
+                  if (stat.key === 'leave') setStatusFilter('On Leave')
+                  if (stat.key === 'resigned') setStatusFilter('Resigned')
+                  if (stat.key === 'archived') setStatusFilter('Archived')
                   window.setTimeout(() => setActiveSummaryCard(null), 700)
                 }}
               >
@@ -4151,7 +4293,7 @@ async function handleSave(employeeData) {
                   All Statuses
                 </option>
 
-                {STATUSES.map(
+                {(dynamicSettings?.employmentStatuses || fallback_STATUSES).map(
                   (status) => (
                     <option
                       key={status}
@@ -4226,11 +4368,10 @@ async function handleSave(employeeData) {
                 <button
                   type="button"
                   onClick={() => setDirectoryView('table')}
-                  className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition ${
-                    directoryView === 'table'
+                  className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition ${directoryView === 'table'
                       ? 'bg-slate-900 text-white shadow-sm'
                       : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
-                  }`}
+                    }`}
                 >
                   <Table2 size={15} />
                   Table
@@ -4239,11 +4380,10 @@ async function handleSave(employeeData) {
                 <button
                   type="button"
                   onClick={() => setDirectoryView('card')}
-                  className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition ${
-                    directoryView === 'card'
+                  className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition ${directoryView === 'card'
                       ? 'bg-slate-900 text-white shadow-sm'
                       : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
-                  }`}
+                    }`}
                 >
                   <LayoutGrid size={15} />
                   Card
@@ -4285,14 +4425,14 @@ async function handleSave(employeeData) {
               </p>
 
               {canAdd && (
-              <button
-                type="button"
-                onClick={openAddModal}
-                className="mt-5 flex items-center gap-2 rounded-xl bg-[#4755AE] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#3d4998]"
-              >
-                <UserPlus size={15} />
-                Add Employee
-              </button>
+                <button
+                  type="button"
+                  onClick={openAddModal}
+                  className="mt-5 flex items-center gap-2 rounded-xl bg-[#4755AE] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#3d4998]"
+                >
+                  <UserPlus size={15} />
+                  Add Employee
+                </button>
               )}
 
             </div>
@@ -4306,6 +4446,7 @@ async function handleSave(employeeData) {
                 onEdit={canEdit ? openEditModal : null}
                 onView={setViewEmployee}
                 onDelete={canDelete ? handleDelete : null}
+                onRestore={canDelete ? handleRestore : null}
                 onQuickUpdate={handleQuickTableUpdate}
                 canEdit={canEdit}
               />
@@ -4322,6 +4463,7 @@ async function handleSave(employeeData) {
                       onEdit={canEdit ? openEditModal : null}
                       onView={setViewEmployee}
                       onDelete={canDelete ? handleDelete : null}
+                      onRestore={canDelete ? handleRestore : null}
                     />
                   ),
                 )}

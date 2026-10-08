@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useMessagingOptional } from '../../Employer/context/messagingStore'
+import { authHeaders } from '../../lib/hrApi'
 import HRAssistant from './HRAssistant'
 
 const rows = (data) => {
@@ -51,9 +52,9 @@ function HRTopbar() {
       try {
         const month = currentMonth()
         const [leaveResponse, employeeResponse, payrollResponse] = await Promise.all([
-          fetch('/api/hr-manager/leave', { cache: 'no-store' }),
-          fetch('/api/hr-manager/employees', { cache: 'no-store' }),
-          fetch(`/api/hr-manager/payroll?payrollMonth=${month}`, { cache: 'no-store' }),
+          fetch('/api/hr-manager/leave', { headers: authHeaders(), cache: 'no-store' }),
+          fetch('/api/hr-manager/employees', { headers: authHeaders(), cache: 'no-store' }),
+          fetch(`/api/hr-manager/payroll?payrollMonth=${month}`, { headers: authHeaders(), cache: 'no-store' }),
         ])
         const [leaveData, employeeData, payrollData] = await Promise.all([
           leaveResponse.ok ? leaveResponse.json() : [],
@@ -205,7 +206,19 @@ function HRTopbar() {
   }
 
   const visibleUpdates = systemUpdates.filter((update) => !dismissedUpdates.has(update.id))
-  const notificationCount = (messaging?.totalUnread || 0) + visibleUpdates.length
+  const unreadMessagesCount = (messaging?.contacts || []).reduce((sum, c) => sum + (c.unread || 0), 0)
+  const notificationCount = unreadMessagesCount + pendingRequests.length
+
+  function dismissAllUpdates() {
+    const allIds = new Set([...dismissedUpdates, ...systemUpdates.map((u) => u.id)])
+    setDismissedUpdates(allIds)
+    try {
+      localStorage.setItem('hr-dismissed-updates', JSON.stringify([...allIds]))
+    } catch {}
+    if (messaging?.markAllRead) {
+      messaging.markAllRead()
+    }
+  }
 
   return (
     <>
@@ -282,7 +295,20 @@ function HRTopbar() {
             <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.14)]">
               <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                 <p className="text-sm font-bold text-slate-900">Notifications</p>
-                <span className="text-xs font-semibold text-slate-400">{notificationCount} new</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-400">
+                    {notificationCount > 0 ? `${notificationCount} new` : 'All caught up'}
+                  </span>
+                  {(visibleUpdates.length > 0 || notificationCount > 0) && (
+                    <button
+                      type="button"
+                      onClick={dismissAllUpdates}
+                      className="text-[11px] font-semibold text-[#0092B8] hover:underline"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="grid grid-cols-3 gap-1 border-b border-slate-100 p-2">
                 <button type="button" onClick={() => setNotificationTab('updates')} className={`rounded-lg px-1.5 py-2 text-[11px] font-semibold ${notificationTab === 'updates' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>Updates ({visibleUpdates.length})</button>

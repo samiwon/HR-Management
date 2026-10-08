@@ -19,6 +19,9 @@ import {
 import { Button, PageTitle, SummaryCard, Table } from '../../components/ui'
 import TableDataTools from '../components/TableDataTools'
 import { useAccess } from '../../lib/rbac'
+import { authHeaders } from '../../lib/hrApi'
+import { getSocket } from '../../lib/socket'
+import { annualEntitlement, networkdays } from '../lib/leave'
 
 const API_BASE = '/api/hr-manager'
 
@@ -80,6 +83,10 @@ function getEmployeeInitials(employee) {
 
 function normalizeEmployee(employee) {
   const name = getEmployeeName(employee)
+  const entitled =
+    Number(employee.annualLeaveEntitled || 0) ||
+    (employee.joinDate ? annualEntitlement(employee.joinDate) : 16) ||
+    16
 
   return {
     ...employee,
@@ -91,27 +98,72 @@ function normalizeEmployee(employee) {
     department:
       employee.department ||
       '—',
-    annualLeaveEntitled: Number(
-      employee.annualLeaveEntitled || 0,
-    ),
+    annualLeaveEntitled: entitled,
     annualLeaveTaken: Number(
       employee.annualLeaveTaken || 0,
     ),
   }
 }
 
+function isRequestForEmployee(request, employee) {
+  if (!request || !employee) return false
+
+  const empDbId = String(employee.id || '').trim().toLowerCase()
+  const empBusinessId = String(employee.employeeId || '').trim().toLowerCase()
+  const empName = String(employee.name || getEmployeeName(employee) || '').trim().toLowerCase()
+
+  const reqEmpId = String(request.employeeId || '').trim().toLowerCase()
+  const reqEmpDbId = String(request.employeeDbId || request.employee?.id || '').trim().toLowerCase()
+  const reqEmpCode = String(request.employeeBusinessId || request.employee?.employeeId || '').trim().toLowerCase()
+  const reqName = String(request.employeeName || request.employee?.name || '').trim().toLowerCase()
+
+  // 1. Match database UUID or custom employee ID
+  if (empDbId && (reqEmpId === empDbId || reqEmpDbId === empDbId || reqEmpCode === empDbId)) {
+    return true
+  }
+  if (empBusinessId && (reqEmpId === empBusinessId || reqEmpDbId === empBusinessId || reqEmpCode === empBusinessId)) {
+    return true
+  }
+
+  // 2. Fallback to match employee name
+  if (empName && reqName && empName === reqName) {
+    return true
+  }
+
+  return false
+}
+
 function normalizeLeaveRequest(request) {
   const status = String(request.approvalStatus || request.status || 'Pending').trim().toLowerCase()
+  const days =
+    Number(request.days || 0) ||
+    (request.startDate && request.endDate ? networkdays(request.startDate, request.endDate) : 0)
+
+  let displayLeaveType = String(request.leaveType || 'Annual Leave').trim()
+  const lowerType = displayLeaveType.toLowerCase()
+  if (lowerType === 'annual') displayLeaveType = 'Annual Leave'
+  else if (lowerType === 'sick') displayLeaveType = 'Sick Leave'
+  else if (lowerType === 'maternity') displayLeaveType = 'Maternity Leave'
+
   return {
     ...request,
 
     id: request.id,
 
     employeeId:
-      request.employeeId ||
       request.employee?.employeeId ||
+      request.employeeId ||
       request.employee?.id ||
       '',
+
+    employeeDbId:
+      request.employee?.id ||
+      request.employeeId ||
+      '',
+
+    employeeBusinessId:
+      request.employee?.employeeId ||
+      (!String(request.employeeId || '').includes('-') ? request.employeeId : ''),
 
     employeeName:
       request.employeeName ||
@@ -123,9 +175,7 @@ function normalizeLeaveRequest(request) {
       request.employee?.department ||
       '—',
 
-    leaveType:
-      request.leaveType ||
-      'Annual Leave',
+    leaveType: displayLeaveType,
 
     requestDate:
       request.requestDate ||
@@ -139,8 +189,7 @@ function normalizeLeaveRequest(request) {
       request.endDate ||
       '',
 
-    days:
-      Number(request.days || 0),
+    days,
 
     approvalStatus: status === 'approved' ? 'Approved' : status === 'rejected' ? 'Rejected' : 'Pending',
 
@@ -169,11 +218,12 @@ function normalizeLeaveRequest(request) {
 }
 
 function getStatusClasses(status) {
-  if (status === 'Approved') {
+  const s = String(status || '').toLowerCase()
+  if (s === 'approved') {
     return 'text-emerald-700'
   }
 
-  if (status === 'Rejected') {
+  if (s === 'rejected') {
     return 'bg-red-50 text-red-700'
   }
 
@@ -181,15 +231,16 @@ function getStatusClasses(status) {
 }
 
 function getLeaveTypeClasses(type) {
-  if (type === 'Annual Leave') {
+  const t = String(type || '').toLowerCase()
+  if (t.includes('annual')) {
     return 'bg-indigo-50 text-indigo-700'
   }
 
-  if (type === 'Sick Leave') {
+  if (t.includes('sick')) {
     return 'bg-rose-50 text-rose-700'
   }
 
-  if (type === 'Maternity Leave') {
+  if (t.includes('maternity')) {
     return 'bg-purple-50 text-purple-700'
   }
 
@@ -200,15 +251,16 @@ function getLeaveTypeClasses(type) {
 // shared getStatusClasses / getLeaveTypeClasses above keep their original
 // background chips for the modals, so they are left untouched.
 function getStatusTextClasses(status) {
-  if (status === 'Approved') {
+  const s = String(status || '').toLowerCase()
+  if (s === 'approved') {
     return 'text-emerald-700'
   }
 
-  if (status === 'Rejected') {
+  if (s === 'rejected') {
     return 'text-rose-700'
   }
 
-  if (status === 'Pending') {
+  if (s === 'pending') {
     return 'text-amber-700'
   }
 
@@ -216,15 +268,16 @@ function getStatusTextClasses(status) {
 }
 
 function getLeaveTypeTextClasses(type) {
-  if (type === 'Annual Leave') {
+  const t = String(type || '').toLowerCase()
+  if (t.includes('annual')) {
     return 'text-[#007a99]'
   }
 
-  if (type === 'Sick Leave') {
+  if (t.includes('sick')) {
     return 'text-rose-700'
   }
 
-  if (type === 'Maternity Leave') {
+  if (t.includes('maternity')) {
     return 'text-purple-700'
   }
 
@@ -1108,6 +1161,7 @@ function Leave() {
       `${API_BASE}/employees`,
       {
         cache: 'no-store',
+        headers: authHeaders(),
       },
     )
 
@@ -1131,6 +1185,7 @@ function Leave() {
       `${API_BASE}/leave`,
       {
         cache: 'no-store',
+        headers: authHeaders(),
       },
     )
 
@@ -1157,10 +1212,10 @@ function Leave() {
       `${API_BASE}/leave/${id}`,
       {
         method: 'PUT',
-        headers: {
+        headers: authHeaders({
           'Content-Type':
             'application/json',
-        },
+        }),
         body: JSON.stringify(payload),
       },
     )
@@ -1351,6 +1406,47 @@ function Leave() {
     }
   }, [])
 
+  useEffect(() => {
+    const handleLeaveCreated = () => {
+      refreshLeaveRequests({ notify: true })
+    }
+    window.addEventListener('hr-leave-request-created', handleLeaveCreated)
+    window.addEventListener('hr-leave-updated', handleLeaveCreated)
+
+    const handleStorage = (e) => {
+      if (e.key === 'hr-leave-request-created') {
+        refreshLeaveRequests({ notify: true })
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+
+    let channel = null
+    if ('BroadcastChannel' in window) {
+      channel = new BroadcastChannel('hr-leave-requests')
+      channel.onmessage = () => {
+        refreshLeaveRequests({ notify: true })
+      }
+    }
+
+    const onSocketEvent = () => refreshLeaveRequests({ notify: true })
+    const socket = getSocket()
+    if (socket) {
+      socket.on('hr-leave-request-created', onSocketEvent)
+      socket.on('hr-leave-updated', onSocketEvent)
+    }
+
+    return () => {
+      window.removeEventListener('hr-leave-request-created', handleLeaveCreated)
+      window.removeEventListener('hr-leave-updated', handleLeaveCreated)
+      window.removeEventListener('storage', handleStorage)
+      if (channel) channel.close()
+      if (socket) {
+        socket.off('hr-leave-request-created', onSocketEvent)
+        socket.off('hr-leave-updated', onSocketEvent)
+      }
+    }
+  }, [])
+
   /*
    * Refresh immediately when the HR user returns
    * to this browser tab.
@@ -1523,25 +1619,17 @@ function Leave() {
     setSelectedEmployee,
   ] = useState(null)
 
-  const selectedEmployeeRequests =
-    selectedEmployee
-      ? requests.filter(
-          (request) =>
-            request.employeeId ===
-            getEmployeeId(
-              selectedEmployee,
-            ),
-        )
-      : []
+  const selectedEmployeeRequests = useMemo(() => {
+    if (!selectedEmployee) return []
+    return requests.filter((request) => isRequestForEmployee(request, selectedEmployee))
+  }, [requests, selectedEmployee])
 
-  const selectedEmployeeApprovedAnnual =
-    selectedEmployeeRequests
+  const selectedEmployeeApprovedAnnual = useMemo(() => {
+    return selectedEmployeeRequests
       .filter(
         (request) =>
-          request.approvalStatus ===
-            'Approved' &&
-          request.leaveType ===
-            'Annual Leave',
+          String(request.approvalStatus || '').toLowerCase() === 'approved' &&
+          String(request.leaveType || '').toLowerCase().includes('annual'),
       )
       .reduce(
         (total, request) =>
@@ -1549,15 +1637,14 @@ function Leave() {
           Number(request.days || 0),
         0,
       )
+  }, [selectedEmployeeRequests])
 
-  const selectedEmployeeApprovedSick =
-    selectedEmployeeRequests
+  const selectedEmployeeApprovedSick = useMemo(() => {
+    return selectedEmployeeRequests
       .filter(
         (request) =>
-          request.approvalStatus ===
-            'Approved' &&
-          request.leaveType ===
-            'Sick Leave',
+          String(request.approvalStatus || '').toLowerCase() === 'approved' &&
+          String(request.leaveType || '').toLowerCase().includes('sick'),
       )
       .reduce(
         (total, request) =>
@@ -1565,19 +1652,21 @@ function Leave() {
           Number(request.days || 0),
         0,
       )
+  }, [selectedEmployeeRequests])
 
-  const selectedEmployeeEntitlement =
-    Number(
-      selectedEmployee?.annualLeaveEntitled ||
-        0,
+  const selectedEmployeeEntitlement = useMemo(() => {
+    if (!selectedEmployee) return 0
+    return Number(
+      selectedEmployee.annualLeaveEntitled ||
+        (selectedEmployee.joinDate ? annualEntitlement(selectedEmployee.joinDate) : 0) ||
+        16,
     )
+  }, [selectedEmployee])
 
-  const selectedEmployeeRemaining =
-    Math.max(
-      selectedEmployeeEntitlement -
-        selectedEmployeeApprovedAnnual,
-      0,
-    )
+  const selectedEmployeeRemaining = Math.max(
+    selectedEmployeeEntitlement - selectedEmployeeApprovedAnnual,
+    0,
+  )
 
   /*
    * ============================================================
@@ -1650,8 +1739,8 @@ function Leave() {
     const employee =
       employees.find(
         (item) =>
-          getEmployeeId(item) ===
-          request.employeeId,
+          isRequestForEmployee(request, item) ||
+          getEmployeeId(item) === request.employeeId,
       )
 
     setEditForm({
@@ -2011,7 +2100,7 @@ function Leave() {
       if (!record.employeeId || !record.leaveType || !record.startDate || !record.endDate) continue
       const response = await fetch(`${API_BASE}/leave`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(record),
       })
       const result = await response.json()
@@ -2612,52 +2701,41 @@ function Leave() {
                 <SelectField
                   value={
                     selectedEmployee
-                      ? getEmployeeId(
-                          selectedEmployee,
-                        )
+                      ? (selectedEmployee.id || selectedEmployee.employeeId || getEmployeeId(selectedEmployee))
                       : ''
                   }
                   onChange={(event) => {
-                    const employee =
-                      employees.find(
-                        (item) =>
-                          getEmployeeId(
-                            item,
-                          ) ===
-                          event.target.value,
-                      )
-
-                    setSelectedEmployee(
-                      employee ||
-                        null,
+                    const val = event.target.value
+                    if (!val) {
+                      setSelectedEmployee(null)
+                      return
+                    }
+                    const employee = employees.find(
+                      (item) =>
+                        String(item.id || '') === val ||
+                        String(item.employeeId || '') === val ||
+                        String(getEmployeeId(item)) === val,
                     )
+                    setSelectedEmployee(employee || null)
                   }}
                 >
                   <option value="">
                     Select employee
                   </option>
 
-                  {employees.map(
-                    (employee) => (
+                  {employees.map((employee) => {
+                    const optionVal = employee.id || employee.employeeId
+                    const displayCode = employee.employeeId || employee.id || ''
+                    const displayName = getEmployeeName(employee)
+                    return (
                       <option
-                        key={
-                          employee.id ||
-                          employee.employeeId
-                        }
-                        value={getEmployeeId(
-                          employee,
-                        )}
+                        key={optionVal}
+                        value={optionVal}
                       >
-                        {getEmployeeId(
-                          employee,
-                        )}{' '}
-                        —{' '}
-                        {getEmployeeName(
-                          employee,
-                        )}
+                        {displayCode ? `${displayCode} — ` : ''}{displayName}
                       </option>
-                    ),
-                  )}
+                    )
+                  })}
                 </SelectField>
               </Field>
             </div>

@@ -21,7 +21,10 @@ export default function Login({ onLogin, onRegister, onForgotPassword }) {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-  const [form, setForm] = useState({ email: "", password: "" });
+  const [form, setForm] = useState(() => ({
+    email: "",
+    password: "",
+  }));
   const [error, setError] = useState("");
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
@@ -268,7 +271,8 @@ export default function Login({ onLogin, onRegister, onForgotPassword }) {
           left: calc(57.4% - 662px);
           top: 96px;
           width: 520px;
-          height: 650px;
+          min-height: 650px;
+          height: auto;
           padding: 25px 32px 22px;
           border-radius: 21px;
           background: rgba(255,255,255,.985);

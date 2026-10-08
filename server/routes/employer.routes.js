@@ -12,6 +12,9 @@ import {
   downloadMyResume,
   uploadMyStatusDocument,
   downloadMyStatusDocument,
+  uploadEmployeeDocument,
+  downloadEmployeeDocument,
+  deleteEmployeeDocument,
   getAttendance,
   getAttendanceConfig,
   getAttendanceStatus,
@@ -53,6 +56,11 @@ router.post('/employees', createEmployee)
 router.put('/employees/:id', updateEmployee)
 router.delete('/employees/:id', deleteEmployee)
 router.post('/employees/:id/reset-password', resetEmployeePassword)
+
+// Documents
+router.post('/profile/documents', handleResumeUpload, uploadEmployeeDocument)
+router.get('/profile/documents/:documentId', downloadEmployeeDocument)
+router.delete('/profile/documents/:documentId', deleteEmployeeDocument)
 
 // Attendance
 router.get('/attendance', getAttendance)

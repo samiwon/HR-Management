@@ -1325,18 +1325,19 @@ export default function UserRoles() {
   const activeCount = users.filter((user) => user.isActive !== false).length
 
   return (
-    <div className="min-h-full bg-[#F3F4F6] p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-6xl">
+    <div className="min-h-full bg-[#F3F4F6] text-slate-950">
+      <main className="w-full max-w-[1600px] px-5 py-6 sm:px-8">
         <PageTitle
           eyebrow="Access Control"
           title="User & Role Management"
-          className="mb-6"
+          description="Manage HR accounts, team permissions, and customize role access across the system."
+          className="animate-employee-hero mb-8 px-0 py-2"
           action={
             <Can permission="users.create">
               <button
                 type="button"
                 onClick={() => setCreateOpen(true)}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0092B8] px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#007a99] focus:outline-none focus:ring-4 focus:ring-cyan-100"
+                className="animate-add-employee-button flex w-fit items-center gap-2 rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-md"
               >
                 <Plus size={17} />
                 New HR Account
@@ -1532,7 +1533,7 @@ export default function UserRoles() {
             </ul>
           </section>
         )}
-      </div>
+      </main>
 
       {createOpen && catalogue && (
         <CreateHrUserModal

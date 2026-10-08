@@ -265,36 +265,40 @@ export function getScheduleTimes() {
   }
 }
 
-export function getWorkStartMinutes() {
-  return parseTimeToMinutes(attendanceConfig.checkInStartTime, 8 * 60)
+export function getWorkStartMinutes(customConfig = null) {
+  const cfg = customConfig || attendanceConfig
+  return parseTimeToMinutes(cfg?.checkInStartTime, 8 * 60)
 }
 
-export function getCheckInCutoffMinutes() {
-  return parseTimeToMinutes(attendanceConfig.requiredCheckInTime, 8 * 60 + 30)
+export function getCheckInCutoffMinutes(customConfig = null) {
+  const cfg = customConfig || attendanceConfig
+  return parseTimeToMinutes(cfg?.requiredCheckInTime, 8 * 60 + 30)
 }
 
-export function getWorkEndMinutes() {
-  return parseTimeToMinutes(attendanceConfig.checkOutStartTime, 17 * 60 + 30)
+export function getWorkEndMinutes(customConfig = null) {
+  const cfg = customConfig || attendanceConfig
+  return parseTimeToMinutes(cfg?.checkOutStartTime, 17 * 60 + 30)
 }
 
-export function getCheckOutEndMinutes() {
-  return parseTimeToMinutes(attendanceConfig.checkOutEndTime, 19 * 60)
+export function getCheckOutEndMinutes(customConfig = null) {
+  const cfg = customConfig || attendanceConfig
+  return parseTimeToMinutes(cfg?.checkOutEndTime, 19 * 60)
 }
 
-export function getWorkStartDisplay() {
-  return formatMinutesToDisplay(getWorkStartMinutes())
+export function getWorkStartDisplay(customConfig = null) {
+  return formatMinutesToDisplay(getWorkStartMinutes(customConfig))
 }
 
-export function getCheckInCutoffDisplay() {
-  return formatMinutesToDisplay(getCheckInCutoffMinutes())
+export function getCheckInCutoffDisplay(customConfig = null) {
+  return formatMinutesToDisplay(getCheckInCutoffMinutes(customConfig))
 }
 
-export function getWorkEndDisplay() {
-  return formatMinutesToDisplay(getWorkEndMinutes())
+export function getWorkEndDisplay(customConfig = null) {
+  return formatMinutesToDisplay(getWorkEndMinutes(customConfig))
 }
 
-export function getCheckOutEndDisplay() {
-  return formatMinutesToDisplay(getCheckOutEndMinutes())
+export function getCheckOutEndDisplay(customConfig = null) {
+  return formatMinutesToDisplay(getCheckOutEndMinutes(customConfig))
 }
 
 // @deprecated — use getWorkStartMinutes() instead (reads HR admin config)
@@ -340,11 +344,11 @@ export function isWorkDay(day) {
 // decide what it says.
 // ─────────────────────────────────────────────────────────────
 
-export function getPunchAvailability(minutes) {
-  const checkInStart = getWorkStartMinutes()
-  const checkInCutoff = getCheckInCutoffMinutes()
-  const checkOutStart = getWorkEndMinutes()
-  const checkOutEnd = getCheckOutEndMinutes()
+export function getPunchAvailability(minutes, customConfig = null) {
+  const checkInStart = getWorkStartMinutes(customConfig)
+  const checkInCutoff = getCheckInCutoffMinutes(customConfig)
+  const checkOutStart = getWorkEndMinutes(customConfig)
+  const checkOutEnd = getCheckOutEndMinutes(customConfig)
 
   return {
     // Check-in opens at checkInStartTime and stays open.
@@ -355,8 +359,8 @@ export function getPunchAvailability(minutes) {
     lateMinutes:
       minutes > checkInCutoff ? minutes - checkInCutoff : 0,
 
-    // Check-out is available once checked in.
-    canCheckOut: true,
+    // Check-out is available only between start and end times as per HR settings
+    canCheckOut: minutes >= checkOutStart && minutes <= checkOutEnd,
 
     // Past the scheduled end — recorded as overtime, not blocked.
     isOvertime: minutes > checkOutEnd,
@@ -491,8 +495,19 @@ export function setPunchState(
 export function applyPunchStatus(
   status = {},
 ) {
-  if (status.attendanceConfig) {
-    setAttendanceConfig(status.attendanceConfig)
+  const config = status.attendanceConfig || (status.checkInStartTime ? {
+    checkInStartTime: status.checkInStartTime,
+    requiredCheckInTime: status.requiredCheckInTime,
+    checkOutStartTime: status.checkOutStartTime,
+    checkOutEndTime: status.checkOutEndTime,
+    geoRestrictionEnabled: status.geoRestrictionEnabled,
+    officeLatitude: status.officeLatitude,
+    officeLongitude: status.officeLongitude,
+    allowedRadiusMeters: status.allowedRadiusMeters,
+  } : null)
+
+  if (config) {
+    setAttendanceConfig(config)
   }
 
   const patch = {

@@ -57,6 +57,28 @@ export async function downloadMyStatusDocument() {
   }
   return response.blob()
 }
+
+export const uploadEmployeeDocument = (file, type, title) => {
+  const form = new FormData()
+  form.append('resume', file)
+  if (type) form.append('type', type)
+  if (title) form.append('title', title)
+  return ef('/profile/documents', { method: 'POST', body: form })
+}
+
+export const deleteEmployeeDocument = (id) => ef(`/profile/documents/${id}`, { method: 'DELETE' })
+
+export async function downloadEmployeeDocument(id) {
+  const response = await fetch(`${API_BASE}/profile/documents/${id}`, {
+    headers: authHeaders(),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.message || 'Failed to download document')
+  }
+  return response.blob()
+}
+
 export const createEmployee = (payload) =>
   ef('/employees', { method: 'POST', body: JSON.stringify(payload) })
 export const updateEmployee = (id, payload) =>

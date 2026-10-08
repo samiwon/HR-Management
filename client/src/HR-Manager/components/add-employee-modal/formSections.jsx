@@ -250,7 +250,15 @@ export function PersonalSection({ formData, errors, isDuplicateId, hasIdentity, 
   )
 }
 
-export function JobSection({ formData, errors, shouldShowExitDate, handleChange }) {
+export function JobSection({
+  formData,
+  errors,
+  shouldShowExitDate,
+  handleChange,
+  departments = HR_SETTINGS.departments,
+  employmentTypes = HR_SETTINGS.employmentTypes,
+  employmentStatuses = HR_SETTINGS.employmentStatuses,
+}) {
   return (
     <div className="space-y-3 pt-2">
       <div className="flex items-center gap-2 pb-1.5 border-b border-gray-100 dark:border-[#262b31]">
@@ -272,7 +280,7 @@ export function JobSection({ formData, errors, shouldShowExitDate, handleChange 
             onChange={(e) => handleChange('department', e.target.value)}
             className={inputNormal}
           >
-            {HR_SETTINGS.departments.map((dept) => (
+            {departments.map((dept) => (
               <option key={dept} value={dept}>
                 {dept}
               </option>
@@ -310,7 +318,7 @@ export function JobSection({ formData, errors, shouldShowExitDate, handleChange 
             onChange={(e) => handleChange('employmentType', e.target.value)}
             className={`${inputNormal} font-medium`}
           >
-            {HR_SETTINGS.employmentTypes.map((type) => (
+            {employmentTypes.map((type) => (
               <option key={type} value={type}>
                 {type}
               </option>
@@ -335,7 +343,7 @@ export function JobSection({ formData, errors, shouldShowExitDate, handleChange 
             onChange={(e) => handleChange('employmentStatus', e.target.value)}
             className={`${inputNormal} font-medium`}
           >
-            {HR_SETTINGS.employmentStatuses.map((st) => (
+            {employmentStatuses.map((st) => (
               <option key={st} value={st}>
                 {st}
               </option>

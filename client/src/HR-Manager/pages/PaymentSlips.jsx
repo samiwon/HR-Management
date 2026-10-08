@@ -517,9 +517,14 @@ function PaymentSlips() {
   }
 
   return (
-    <div className="min-h-full bg-[#F3F4F6] p-4 sm:p-6 lg:p-8 print:bg-white print:p-0">
-      <div className="mx-auto max-w-7xl print:hidden">
-        <PageTitle eyebrow="Payment Slips" title="Employee Payment Slips" className="mb-6" />
+    <div className="min-h-full bg-[#F3F4F6] text-slate-950 print:bg-white print:p-0">
+      <main className="w-full max-w-[1600px] px-5 py-6 sm:px-8 print:hidden">
+        <PageTitle
+          eyebrow="Payroll Documentation"
+          title="Payment Slips"
+          description="Generate, review, and export employee payment slips with detailed earnings, tax deductions, and attendance summaries."
+          className="animate-employee-hero mb-8 px-0 py-2"
+        />
 
         {(loadError || employeeWarning) && (
           <div className="mb-5 space-y-2">
@@ -734,7 +739,7 @@ function PaymentSlips() {
             </Table>
           </div>
         </section>
-      </div>
+      </main>
 
       <PayslipPreview
         payslip={selectedPayslip}

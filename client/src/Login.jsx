@@ -562,8 +562,8 @@ function ReportSlide() {
 function Login() {
   const navigate = useNavigate()
 
-  const [email, setEmail] = useState('employer@yanol.com')
-  const [password, setPassword] = useState('employer123')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [selectedRole, setSelectedRole] = useState('EMPLOYER')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
@@ -818,17 +818,13 @@ function Login() {
           {/* Role Tabs */}
           <div className="mb-6 p-1 bg-gray-100/90 rounded-xl border border-gray-200/80 grid grid-cols-2 gap-1.5">
             {[
-              { role: 'EMPLOYER', icon: Building, label: 'Employer', email: 'employer@yanol.com', pw: 'employer123' },
-              { role: 'HR_MANAGER', icon: Users, label: 'HR Manager', email: 'hr@yanol.com', pw: 'hr123' },
-            ].map(({ role, icon: Icon, label, email: e, pw }) => (
+              { role: 'EMPLOYER', icon: Building, label: 'Employee / Staff' },
+              { role: 'HR_MANAGER', icon: Users, label: 'HR Manager' },
+            ].map(({ role, icon: Icon, label }) => (
               <button
                 key={role}
                 type="button"
-                onClick={() => {
-                  setSelectedRole(role)
-                  setEmail(e)
-                  setPassword(pw)
-                }}
+                onClick={() => setSelectedRole(role)}
                 className={`py-2 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                   selectedRole === role
                     ? 'bg-white text-gray-950 shadow-xs font-semibold'
@@ -855,7 +851,7 @@ function Login() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="employer@yanol.com"
+                placeholder="name@company.com"
                 className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900/15 focus:border-gray-900 transition-all text-gray-900 placeholder:text-gray-400 bg-white shadow-2xs"
               />
             </div>

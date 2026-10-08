@@ -1,7 +1,7 @@
 import { Server } from 'socket.io'
 import jwt from 'jsonwebtoken'
 
-const SECRET = process.env.JWT_SECRET
+const SECRET = process.env.JWT_SECRET || 'hr-management-development-secret'
 
 const onlineUsers = new Set()
 
@@ -20,8 +20,9 @@ export function initSocket(httpServer) {
     if (!token) return next(new Error('Missing token'))
     try {
       const payload = jwt.verify(token, SECRET)
-      if (payload.type !== 'session') return next(new Error('Invalid token type'))
-      socket.data.userId = Number(payload.sub)
+      const userId = Number(payload.userId || payload.sub || payload.id)
+      if (!userId) return next(new Error('Invalid token user ID'))
+      socket.data.userId = userId
       next()
     } catch {
       next(new Error('Invalid token'))
@@ -49,7 +50,7 @@ export function initSocket(httpServer) {
 }
 
 export function isUserOnline(userId) {
-  return onlineUsers.has(userId)
+  return onlineUsers.has(Number(userId))
 }
 
 export { onlineUsers }

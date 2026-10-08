@@ -93,7 +93,7 @@ export function EmergencyCheckOutButton({ onEvent }) {
   const { checkedIn, checkedOut, checkInAt } = punch
 
   const availability = useMemo(
-    () => getPunchAvailability(minutes),
+    () => getPunchAvailability(minutes, config),
     [minutes, config],
   )
 
@@ -319,12 +319,12 @@ export default function PunchCard() {
   const { checkedIn, checkedOut, checkInAt, checkOutAt, onLeave } = punch
 
   const availability = useMemo(
-    () => getPunchAvailability(minutes),
+    () => getPunchAvailability(minutes, config),
     [minutes, config],
   )
 
-  const canCheckIn = !onLeave && availability.canCheckIn && !checkedIn && !checkedOut
-  const canCheckOut = !onLeave && availability.canCheckOut && checkedIn && !checkedOut
+  const canCheckIn = availability.canCheckIn && !checkedIn && !checkedOut
+  const canCheckOut = availability.canCheckOut && checkedIn && !checkedOut
 
   async function handleCheckIn() {
     setBusy(true)
@@ -419,7 +419,7 @@ export default function PunchCard() {
               </span>
             </div>
             <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
-              Check-In: <strong className="font-semibold text-slate-700 dark:text-slate-200">{config.checkInStartTime || '08:00'} ({getWorkStartDisplay()})</strong> · Cutoff: <strong className="font-semibold text-slate-700 dark:text-slate-200">{config.requiredCheckInTime || '08:30'} ({getCheckInCutoffDisplay()})</strong> · Check-Out: <strong className="font-semibold text-slate-700 dark:text-slate-200">{config.checkOutStartTime || '17:30'} ({getWorkEndDisplay()})</strong> · Shift End: <strong className="font-semibold text-slate-700 dark:text-slate-200">{config.checkOutEndTime || '19:00'} ({getCheckOutEndDisplay()})</strong>
+              Check-In: <strong className="font-semibold text-slate-700 dark:text-slate-200">{config.checkInStartTime || '08:00'} ({getWorkStartDisplay(config)})</strong> · Cutoff: <strong className="font-semibold text-slate-700 dark:text-slate-200">{config.requiredCheckInTime || '08:30'} ({getCheckInCutoffDisplay(config)})</strong> · Check-Out: <strong className="font-semibold text-slate-700 dark:text-slate-200">{config.checkOutStartTime || '17:30'} ({getWorkEndDisplay(config)})</strong> · Shift End: <strong className="font-semibold text-slate-700 dark:text-slate-200">{config.checkOutEndTime || '19:00'} ({getCheckOutEndDisplay(config)})</strong>
             </p>
           </div>
 
@@ -452,9 +452,9 @@ export default function PunchCard() {
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     {canCheckIn
                       ? availability.isLate
-                        ? `Check-in open — late by ${availability.lateMinutes}m past cutoff`
+                        ? `Check-in open — late by ${((availability.lateMinutes || 0) / 60).toFixed(1)} hrs past cutoff`
                         : `Check-in is open now (On-time until ${config.requiredCheckInTime || '08:30'})`
-                      : `Opens at ${config.checkInStartTime || '08:00'} (${getWorkStartDisplay()})`}
+                      : `Opens at ${config.checkInStartTime || '08:00'} (${getWorkStartDisplay(config)})`}
                   </p>
                 </div>
               </div>
@@ -471,7 +471,7 @@ export default function PunchCard() {
                   </p>
                   <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
                     {availability.isEarlyDeparture
-                      ? `Shift active (${availability.earlyDepartureMinutes}m until scheduled end ${getCheckOutEndDisplay()})`
+                      ? `Shift active (${availability.earlyDepartureMinutes}m until scheduled end ${getCheckOutEndDisplay(config)})`
                       : availability.isOvertime
                       ? `Overtime active (+${availability.overtimeMinutes}m)`
                       : 'Shift in progress'}

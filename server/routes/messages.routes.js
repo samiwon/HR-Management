@@ -1,12 +1,21 @@
 import { Router } from 'express'
 import { requireAuth } from '../middleware/auth.middleware.js'
 import prisma from '../db.js'
+import { isUserOnline } from '../socket.js'
+import { upload, UPLOAD_DIR } from '../middleware/upload.js'
 
 const router = Router()
 router.use(requireAuth)
 
+const isRoleHR = (role) => ['HR_MANAGER', 'HR_ADMIN', 'ADMIN'].includes(String(role || '').toUpperCase())
+
 function formatMessageForClient(msg, currentUserId) {
   const isMe = msg.senderId === currentUserId
+  const isEdited = Boolean(
+    msg.updatedAt &&
+      msg.createdAt &&
+      new Date(msg.updatedAt).getTime() - new Date(msg.createdAt).getTime() > 1000
+  )
   return {
     id: msg.id,
     text: msg.text,
@@ -18,7 +27,13 @@ function formatMessageForClient(msg, currentUserId) {
       minute: '2-digit',
     }),
     createdAt: msg.createdAt instanceof Date ? msg.createdAt.toISOString() : msg.createdAt,
-    read: msg.read,
+    updatedAt: msg.updatedAt instanceof Date ? msg.updatedAt.toISOString() : msg.updatedAt,
+    edited: isEdited,
+    editedAt: isEdited
+      ? (msg.updatedAt instanceof Date ? msg.updatedAt.toISOString() : msg.updatedAt)
+      : null,
+    read: Boolean(msg.read),
+    status: isMe ? (msg.read ? 'read' : 'delivered') : (msg.read ? 'read' : 'delivered'),
     isComplain: Boolean(msg.isComplain),
     attachment: msg.attachmentUrl
       ? {
@@ -36,14 +51,13 @@ function formatMessageForClient(msg, currentUserId) {
 // -------------------------------------------------------------
 router.get('/contacts', async (req, res) => {
   try {
-    const currentUserId = Number(req.user.userId)
+    const currentUserId = Number(req.user.userId || req.user.id)
     const currentUser = await prisma.user.findUnique({
       where: { id: currentUserId },
       select: { id: true, role: true, name: true },
     })
 
-    const isCurrentHR =
-      currentUser?.role === 'HR_MANAGER' || currentUser?.role === 'ADMIN'
+    const isCurrentHR = isRoleHR(currentUser?.role)
 
     // Fetch all other users
     const users = await prisma.user.findMany({
@@ -86,47 +100,67 @@ router.get('/contacts', async (req, res) => {
           },
         })
 
-        const isHR =
-          user.role === 'HR_MANAGER' || user.role === 'ADMIN'
+        const isHR = isRoleHR(user.role)
 
         return {
           id: String(user.id),
-          name: user.name || (isHR ? 'HR Manager' : 'Employee'),
+          name: user.name || (isHR ? 'HR Admin' : 'Employee'),
           email: user.email,
           role: user.role,
-          roleLabel: isHR ? 'HR Manager' : user.employee?.jobTitle || 'Employee',
+          roleLabel: isHR ? 'HR Admin' : user.employee?.jobTitle || 'Employee',
           department: user.employee?.department || (isHR ? 'Human Resources' : 'General'),
           isHR,
           unread: unreadCount,
           lastMessage: lastMsg
             ? {
+                id: lastMsg.id,
                 text: lastMsg.text,
                 from: lastMsg.senderId === currentUserId ? 'me' : 'them',
+                senderId: lastMsg.senderId,
+                receiverId: lastMsg.receiverId,
                 time: new Date(lastMsg.createdAt).toLocaleTimeString('en-US', {
                   hour: '2-digit',
                   minute: '2-digit',
                 }),
+                createdAt:
+                  lastMsg.createdAt instanceof Date
+                    ? lastMsg.createdAt.toISOString()
+                    : lastMsg.createdAt,
+                read: Boolean(lastMsg.read),
+                status:
+                  lastMsg.senderId === currentUserId
+                    ? (lastMsg.read ? 'read' : 'delivered')
+                    : (lastMsg.read ? 'read' : 'delivered'),
                 isComplain: Boolean(lastMsg.isComplain),
+                attachment: lastMsg.attachmentUrl
+                  ? {
+                      url: lastMsg.attachmentUrl,
+                      name: lastMsg.attachmentName || 'attachment',
+                      type: lastMsg.attachmentType || 'application/octet-stream',
+                      size: lastMsg.attachmentSize || 0,
+                    }
+                  : null,
               }
             : null,
-          online: false,
+          online: isUserOnline(user.id),
         }
       })
     )
 
     // Sort contacts:
-    // If employee: HR Admin is always on top.
-    // Next: contacts with messages (most recent first).
-    // Last: others.
+    // Sorted dynamically by latest message timestamp (descending)
+    // If no messages on either, employee puts HR Admin on top
     contacts.sort((a, b) => {
+      const timeA = a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt).getTime() : 0
+      const timeB = b.lastMessage?.createdAt ? new Date(b.lastMessage.createdAt).getTime() : 0
+      if (timeA !== timeB) return timeB - timeA
+
       if (!isCurrentHR) {
         if (a.isHR && !b.isHR) return -1
         if (!a.isHR && b.isHR) return 1
       }
       if (a.unread !== b.unread) return b.unread - a.unread
-      const aTime = a.lastMessage ? 1 : 0
-      const bTime = b.lastMessage ? 1 : 0
-      return bTime - aTime
+      return (a.name || '').localeCompare(b.name || '')
     })
 
     return res.json({ contacts })
@@ -141,7 +175,7 @@ router.get('/contacts', async (req, res) => {
 // -------------------------------------------------------------
 router.get('/users', async (req, res) => {
   try {
-    const currentUserId = Number(req.user.userId)
+    const currentUserId = Number(req.user.userId || req.user.id)
     const users = await prisma.user.findMany({
       where: { id: { not: currentUserId } },
       select: {
@@ -161,21 +195,23 @@ router.get('/users', async (req, res) => {
     })
 
     return res.json({
-      users: users.map((u) => ({
-        id: String(u.id),
-        name: u.name,
-        email: u.email,
-        role: u.role,
-        subtitle:
-          u.role === 'HR_MANAGER'
-            ? 'HR Manager · Human Resources'
+      users: users.map((u) => {
+        const isHR = isRoleHR(u.role)
+        return {
+          id: String(u.id),
+          name: u.name,
+          email: u.email,
+          role: u.role,
+          subtitle: isHR
+            ? 'HR Admin · Human Resources'
             : `${u.employee?.jobTitle || 'Employee'} · ${u.employee?.department || 'General'}`,
-        initials: (u.name || 'U')
-          .split(/\s+/)
-          .slice(0, 2)
-          .map((n) => n[0].toUpperCase())
-          .join(''),
-      })),
+          initials: (u.name || 'U')
+            .split(/\s+/)
+            .slice(0, 2)
+            .map((n) => n[0].toUpperCase())
+            .join(''),
+        }
+      }),
     })
   } catch (error) {
     console.error('Get message users error:', error)
@@ -184,11 +220,104 @@ router.get('/users', async (req, res) => {
 })
 
 // -------------------------------------------------------------
+// GET /hr-admins — Directory of all HR Managers / Admins
+// -------------------------------------------------------------
+router.get('/hr-admins', async (req, res) => {
+  try {
+    const hrAdmins = await prisma.user.findMany({
+      where: { role: { in: ['HR_MANAGER', 'HR_ADMIN', 'ADMIN'] } },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        employeeId: true,
+      },
+      orderBy: { name: 'asc' },
+    })
+
+    return res.json({
+      hrAdmins: hrAdmins.map((u) => ({
+        id: String(u.id),
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        subtitle: 'HR Admin · Human Resources',
+        initials: (u.name || 'HR')
+          .split(/\s+/)
+          .slice(0, 2)
+          .map((n) => n[0].toUpperCase())
+          .join(''),
+      })),
+    })
+  } catch (error) {
+    console.error('Get hr-admins error:', error)
+    return res.status(500).json({ message: 'Failed to load HR admins' })
+  }
+})
+
+// -------------------------------------------------------------
+// POST /start — Start a conversation
+// -------------------------------------------------------------
+router.post('/start', async (req, res) => {
+  try {
+    const { userId, employeeId } = req.body
+    const targetId = Number(userId || employeeId)
+
+    if (!targetId) {
+      return res.status(400).json({ message: 'Target user ID is required' })
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: targetId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        employee: {
+          select: {
+            jobTitle: true,
+            department: true,
+          },
+        },
+      },
+    })
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' })
+    }
+
+    const isHR = isRoleHR(user.role)
+
+    return res.json({
+      user: {
+        id: String(user.id),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        subtitle: isHR
+          ? 'HR Admin · Human Resources'
+          : `${user.employee?.jobTitle || 'Employee'} · ${user.employee?.department || 'General'}`,
+        initials: (user.name || 'U')
+          .split(/\s+/)
+          .slice(0, 2)
+          .map((n) => n[0].toUpperCase())
+          .join(''),
+      },
+    })
+  } catch (error) {
+    console.error('Start conversation error:', error)
+    return res.status(500).json({ message: 'Failed to start conversation' })
+  }
+})
+
+// -------------------------------------------------------------
 // GET /:contactId — Load thread with specific user
 // -------------------------------------------------------------
 router.get('/:contactId', async (req, res) => {
   try {
-    const currentUserId = Number(req.user.userId)
+    const currentUserId = Number(req.user.userId || req.user.id)
     const targetId = Number(req.params.contactId)
 
     if (!targetId || Number.isNaN(targetId)) {
@@ -206,7 +335,7 @@ router.get('/:contactId', async (req, res) => {
     })
 
     // Automatically mark incoming messages as read
-    await prisma.message.updateMany({
+    const updateResult = await prisma.message.updateMany({
       where: {
         senderId: targetId,
         receiverId: currentUserId,
@@ -214,6 +343,15 @@ router.get('/:contactId', async (req, res) => {
       },
       data: { read: true },
     })
+
+    if (updateResult.count > 0) {
+      const io = req.app.get('io')
+      if (io) {
+        io.to(`user:${targetId}`).emit('message:read', {
+          contactId: String(currentUserId),
+        })
+      }
+    }
 
     return res.json({
       messages: messages.map((m) => formatMessageForClient(m, currentUserId)),
@@ -229,7 +367,7 @@ router.get('/:contactId', async (req, res) => {
 // -------------------------------------------------------------
 router.post('/:contactId', async (req, res) => {
   try {
-    const currentUserId = Number(req.user.userId)
+    const currentUserId = Number(req.user.userId || req.user.id)
     const targetId = Number(req.params.contactId)
     const { text, isComplain } = req.body || {}
 
@@ -269,7 +407,7 @@ router.post('/:contactId', async (req, res) => {
     const clientMsg = formatMessageForClient(record, currentUserId)
     const recipientClientMsg = formatMessageForClient(record, targetId)
 
-    // Real-time Socket.IO emission
+    // Real-time Socket.IO emission to recipient and sender
     const io = req.app.get('io')
     if (io) {
       io.to(`user:${targetId}`).emit('message:new', {
@@ -292,11 +430,80 @@ router.post('/:contactId', async (req, res) => {
 })
 
 // -------------------------------------------------------------
+// POST /:contactId/upload — Send an attachment
+// -------------------------------------------------------------
+router.post('/:contactId/upload', upload.single('file'), async (req, res) => {
+  try {
+    const currentUserId = Number(req.user.userId || req.user.id)
+    const targetId = Number(req.params.contactId)
+    const caption = String(req.body.caption || '').trim()
+
+    if (!targetId || Number.isNaN(targetId)) {
+      return res.status(400).json({ message: 'Invalid contact ID' })
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'File is required' })
+    }
+
+    const recipient = await prisma.user.findUnique({
+      where: { id: targetId },
+      select: { id: true, name: true, role: true },
+    })
+    if (!recipient) {
+      return res.status(404).json({ message: 'Recipient not found' })
+    }
+
+    const sender = await prisma.user.findUnique({
+      where: { id: currentUserId },
+      select: { id: true, name: true, role: true },
+    })
+
+    const fileUrl = `/uploads/${req.file.filename}`
+
+    const record = await prisma.message.create({
+      data: {
+        senderId: currentUserId,
+        receiverId: targetId,
+        text: caption,
+        attachmentUrl: fileUrl,
+        attachmentName: req.file.originalname,
+        attachmentType: req.file.mimetype,
+        attachmentSize: req.file.size,
+        read: false,
+      },
+    })
+
+    const clientMsg = formatMessageForClient(record, currentUserId)
+    const recipientClientMsg = formatMessageForClient(record, targetId)
+
+    const io = req.app.get('io')
+    if (io) {
+      io.to(`user:${targetId}`).emit('message:new', {
+        contactId: String(currentUserId),
+        senderName: sender?.name || 'User',
+        message: recipientClientMsg,
+      })
+      io.to(`user:${currentUserId}`).emit('message:new', {
+        contactId: String(targetId),
+        senderName: sender?.name || 'User',
+        message: clientMsg,
+      })
+    }
+
+    return res.status(201).json({ message: clientMsg })
+  } catch (error) {
+    console.error('Upload message attachment error:', error)
+    return res.status(500).json({ message: 'Failed to send attachment' })
+  }
+})
+
+// -------------------------------------------------------------
 // POST /:contactId/read — Mark messages as read
 // -------------------------------------------------------------
 router.post('/:contactId/read', async (req, res) => {
   try {
-    const currentUserId = Number(req.user.userId)
+    const currentUserId = Number(req.user.userId || req.user.id)
     const targetId = Number(req.params.contactId)
 
     await prisma.message.updateMany({
@@ -307,6 +514,13 @@ router.post('/:contactId/read', async (req, res) => {
       },
       data: { read: true },
     })
+
+    const io = req.app.get('io')
+    if (io) {
+      io.to(`user:${targetId}`).emit('message:read', {
+        contactId: String(currentUserId),
+      })
+    }
 
     return res.json({ success: true })
   } catch (error) {
@@ -320,7 +534,7 @@ router.post('/:contactId/read', async (req, res) => {
 // -------------------------------------------------------------
 router.put('/:contactId/messages/:messageId', async (req, res) => {
   try {
-    const currentUserId = Number(req.user.userId)
+    const currentUserId = Number(req.user.userId || req.user.id)
     const targetId = Number(req.params.contactId)
     const { messageId } = req.params
     const { text } = req.body || {}
@@ -352,6 +566,10 @@ router.put('/:contactId/messages/:messageId', async (req, res) => {
         contactId: String(currentUserId),
         message: recipientClientMsg,
       })
+      io.to(`user:${currentUserId}`).emit('message:updated', {
+        contactId: String(targetId),
+        message: clientMsg,
+      })
     }
 
     return res.json({ message: clientMsg })
@@ -366,7 +584,7 @@ router.put('/:contactId/messages/:messageId', async (req, res) => {
 // -------------------------------------------------------------
 router.delete('/:contactId/messages/:messageId', async (req, res) => {
   try {
-    const currentUserId = Number(req.user.userId)
+    const currentUserId = Number(req.user.userId || req.user.id)
     const targetId = Number(req.params.contactId)
     const { messageId } = req.params
 
@@ -386,6 +604,10 @@ router.delete('/:contactId/messages/:messageId', async (req, res) => {
     if (io) {
       io.to(`user:${targetId}`).emit('message:deleted', {
         contactId: String(currentUserId),
+        messageId,
+      })
+      io.to(`user:${currentUserId}`).emit('message:deleted', {
+        contactId: String(targetId),
         messageId,
       })
     }

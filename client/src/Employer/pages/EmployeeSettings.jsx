@@ -34,6 +34,9 @@ import {
   uploadMyStatusDocument,
   downloadMyStatusDocument,
   updateMyEmployeeProfile,
+  uploadEmployeeDocument,
+  downloadEmployeeDocument,
+  deleteEmployeeDocument,
 } from '../lib/employerApi'
 import { fetchMe, updateProfileApi, changePasswordApi } from '../lib/userApi'
 
@@ -131,6 +134,10 @@ function PersonalInfoSection({
   onUploadResume,
   onDownloadResume,
   resumeUploading,
+  onUploadDoc,
+  onDownloadDoc,
+  onDeleteDoc,
+  docUploading,
   onUploadStatusDocument,
   onDownloadStatusDocument,
   statusUploading,
@@ -149,6 +156,7 @@ function PersonalInfoSection({
     portfolioUrl: '',
     skills: '',
   })
+  const [documentToDelete, setDocumentToDelete] = useState(null)
 
   useEffect(() => {
     setForm({
@@ -200,7 +208,7 @@ function PersonalInfoSection({
             {employee?.avatar ? <img src={employee.avatar} alt={`${form.name || 'Employee'} profile`} className="h-16 w-16 rounded-full object-cover ring-2 ring-gray-100 dark:ring-[#33383f]" /> : <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-950 text-lg font-bold text-white shadow-sm dark:bg-[#3a4149] dark:text-gray-100">{(form.name || '?').split(' ').filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase() || '?'}</div>}
             <label className="absolute -bottom-1 -right-1 flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-2 border-white bg-[#0092B8] text-white shadow dark:border-[#15181d]" title="Change profile photo">
               {photoUploading ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />}
-              <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" disabled={photoUploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) onUploadPhoto(file); event.target.value = '' }} />
+              <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" disabled={photoUploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) onUploadPhoto(file); event.target.value = '' }} />
             </label>
           </div>
           <div className="min-w-0">
@@ -337,126 +345,68 @@ function PersonalInfoSection({
         <div className="mt-5 border-t border-gray-100 pt-5 dark:border-[#262b31]">
           <SectionHeader
             icon={FileText}
-            title="Resume / CV"
-            description="Upload a current PDF, DOC, or DOCX resume for HR to review."
+            title="Employee Documents"
+            description="Upload your CV, certificates, ID documents, and other important files."
           />
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              {employee?.resumeFileName ? (
-                <>
-                  <p className="truncate text-xs font-semibold text-gray-900 dark:text-gray-100">
-                    {employee.resumeFileName}
-                  </p>
-                  <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                    {employee.resumeFileSize
-                      ? `${(employee.resumeFileSize / (1024 * 1024)).toFixed(2)} MB`
-                      : 'Uploaded'}
-                  </p>
-                </>
-              ) : (
-                <p className="text-xs text-gray-500 dark:text-gray-400">No resume uploaded</p>
-              )}
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {employee?.resumeFileName && (
-                <button
-                  type="button"
-                  onClick={onDownloadResume}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-[#33383f] dark:text-gray-200 dark:hover:bg-[#1c2026]"
-                >
-                  <Download size={14} /> Download
-                </button>
-              )}
-              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-gray-950 px-3 py-2 text-xs font-semibold text-white transition hover:bg-gray-800 dark:bg-[#3a4149] dark:hover:bg-gray-600">
-                {resumeUploading ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <Upload size={14} />
-                )}
-                {resumeUploading ? 'Uploading…' : employee?.resumeFileName ? 'Replace Resume' : 'Upload Resume'}
-                <input
-                  type="file"
-                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  className="sr-only"
-                  disabled={resumeUploading}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0]
-                    if (file) onUploadResume(file)
-                    event.target.value = ''
-                  }}
-                />
-              </label>
-            </div>
+          <div className="space-y-3">
+            {(employee?.documents || []).length === 0 ? (
+              <p className="text-xs text-gray-500 dark:text-gray-400">No documents uploaded</p>
+            ) : (
+              (employee?.documents || []).map(doc => (
+                <div key={doc.id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-gray-50 dark:bg-[#1c2026] p-3 rounded-lg border border-gray-200 dark:border-[#33383f] gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold text-gray-900 dark:text-gray-100">
+                      {doc.title}
+                    </p>
+                    <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                      {(doc.fileSize / (1024 * 1024)).toFixed(2)} MB • {doc.mimeType}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onDownloadDoc(doc.id, doc.fileName)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-white dark:border-[#33383f] dark:text-gray-200 dark:hover:bg-[#15181d]"
+                    >
+                      <Download size={14} /> Download
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDocumentToDelete(doc.id)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-400 dark:hover:bg-rose-900/50"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-          <p className="mt-3 text-[10px] text-gray-400">Maximum file size: 10 MB.</p>
+          <div className="mt-4">
+            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-gray-950 px-4 py-2 text-xs font-semibold text-white transition hover:bg-gray-800 dark:bg-[#3a4149] dark:hover:bg-gray-600 shadow-sm">
+              {docUploading ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Upload size={14} />
+              )}
+              {docUploading ? 'Uploading…' : 'Add Document'}
+              <input
+                type="file"
+                className="hidden"
+                accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                disabled={docUploading}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) onUploadDoc(file)
+                  event.target.value = ''
+                }}
+              />
+            </label>
+          </div>
+          <p className="mt-3 text-[10px] text-gray-400">Maximum file size: 10 MB per file.</p>
         </div>
 
-        {/* Status document */}
-        <div className="mt-5 border-t border-gray-100 pt-5 dark:border-[#262b31]">
-          <SectionHeader
-            icon={RefreshCw}
-            title="Updated Status Document"
-            description="Attach the letter or certificate that supports your current status, so HR can act on it without asking you for a copy."
-          />
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              {employee?.statusFileName ? (
-                <>
-                  <p className="truncate text-xs font-semibold text-gray-900 dark:text-gray-100">
-                    {employee.statusFileName}
-                  </p>
-                  <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                    {employee.statusFileSize
-                      ? `${(employee.statusFileSize / (1024 * 1024)).toFixed(2)} MB`
-                      : 'Uploaded'}
-                  </p>
-                </>
-              ) : (
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  No status document uploaded
-                </p>
-              )}
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {employee?.statusFileName && (
-                <button
-                  type="button"
-                  onClick={onDownloadStatusDocument}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-[#33383f] dark:text-gray-200 dark:hover:bg-[#1c2026]"
-                >
-                  <Download size={14} /> Download
-                </button>
-              )}
-              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-gray-950 px-3 py-2 text-xs font-semibold text-white transition hover:bg-gray-800 dark:bg-[#3a4149] dark:hover:bg-gray-600">
-                {statusUploading ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <Upload size={14} />
-                )}
-                {statusUploading
-                  ? 'Uploading…'
-                  : employee?.statusFileName
-                    ? 'Replace'
-                    : 'Upload'}
-                <input
-                  type="file"
-                  accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg"
-                  className="sr-only"
-                  disabled={statusUploading}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0]
-                    if (file) onUploadStatusDocument(file)
-                    event.target.value = ''
-                  }}
-                />
-              </label>
-            </div>
-          </div>
-          <p className="mt-3 text-[10px] text-gray-400">
-            PDF, DOC, DOCX, PNG or JPG — maximum file size: 10 MB. Uploading a new one replaces
-            the previous document.
-          </p>
-        </div>
+
 
         <div className="flex justify-end mt-5">
           <button
@@ -496,6 +446,20 @@ function PersonalInfoSection({
           ))}
         </div>
       </Card>
+      {/* Delete Confirmation Modal */}
+      {documentToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/40 backdrop-blur-sm px-4">
+          <div className="bg-white dark:bg-[#15181d] rounded-2xl p-6 shadow-2xl max-w-sm w-full border border-gray-100 dark:border-[#262b31] animate-in fade-in zoom-in duration-200">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-2">Delete Document</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-6">Are you sure you want to delete this document? This action cannot be undone.</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setDocumentToDelete(null)} className="px-4 py-2 rounded-xl text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 dark:text-gray-300 dark:bg-[#22262c] dark:hover:bg-[#2c3138] transition-colors">Cancel</button>
+              <button onClick={() => { onDeleteDoc(documentToDelete); setDocumentToDelete(null) }} className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 transition-colors">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
@@ -900,6 +864,7 @@ function EmployeeSettings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [resumeUploading, setResumeUploading] = useState(false)
+  const [docUploading, setDocUploading] = useState(false)
   const [statusUploading, setStatusUploading] = useState(false)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [user, setUser] = useState(() => getCurrentUser())
@@ -1034,6 +999,43 @@ function EmployeeSettings() {
     }
   }
 
+  const uploadDoc = async (file) => {
+    setDocUploading(true)
+    try {
+      const profile = await uploadEmployeeDocument(file, 'Document', file.name)
+      setEmployee((current) => ({ ...current, ...profile }))
+      showToast('Document uploaded')
+    } catch (err) {
+      showToast(err.message || 'Could not upload document')
+    } finally {
+      setDocUploading(false)
+    }
+  }
+
+  const downloadDoc = async (id, fileName) => {
+    try {
+      const blob = await downloadEmployeeDocument(id)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = fileName || 'document'
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      showToast(err.message || 'Could not download document')
+    }
+  }
+
+  const deleteDoc = async (id) => {
+    try {
+      const profile = await deleteEmployeeDocument(id)
+      setEmployee((current) => ({ ...current, ...profile }))
+      showToast('Document deleted')
+    } catch (err) {
+      showToast(err.message || 'Could not delete document')
+    }
+  }
+
   const downloadResume = async () => {
     try {
       const blob = await downloadMyResume()
@@ -1161,6 +1163,7 @@ function EmployeeSettings() {
               loading={loading}
               saving={saving}
               resumeUploading={resumeUploading}
+              docUploading={docUploading}
               statusUploading={statusUploading}
               onUploadPhoto={uploadProfilePhoto}
               photoUploading={photoUploading}
@@ -1168,6 +1171,9 @@ function EmployeeSettings() {
               onSaveProfessionalProfile={saveProfessionalProfile}
               onUploadResume={uploadResume}
               onDownloadResume={downloadResume}
+              onUploadDoc={uploadDoc}
+              onDownloadDoc={downloadDoc}
+              onDeleteDoc={deleteDoc}
               onUploadStatusDocument={uploadStatusDocument}
               onDownloadStatusDocument={downloadStatusDocument}
             />

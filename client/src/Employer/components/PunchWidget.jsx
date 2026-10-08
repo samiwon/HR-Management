@@ -88,12 +88,12 @@ export default function PunchWidget() {
   const { checkedIn, checkedOut, checkInAt, checkOutAt, onLeave } = punch
 
   const availability = useMemo(
-    () => getPunchAvailability(minutes),
+    () => getPunchAvailability(minutes, config),
     [minutes, config],
   )
 
-  const canCheckIn = !onLeave && availability.canCheckIn && !checkedIn && !checkedOut
-  const canCheckOut = !onLeave && availability.canCheckOut && checkedIn && !checkedOut
+  const canCheckIn = availability.canCheckIn && !checkedIn && !checkedOut
+  const canCheckOut = availability.canCheckOut && checkedIn && !checkedOut
 
   const resync = () => {
     fetchPunchStatusApi()
@@ -172,26 +172,18 @@ export default function PunchWidget() {
     }
   }
 
-  // 1. ON LEAVE
-  if (onLeave) {
-    return (
-      <div className="flex items-center gap-1.5 h-8 px-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300 shadow-2xs">
-        <CalendarOff size={13} />
-        <span className="text-[11px] font-semibold whitespace-nowrap">
-          {onLeave.leaveType} until {onLeave.endDate}
-        </span>
-      </div>
-    )
-  }
+  // Removed early return for onLeave so they can still check in if they work
 
   // 2. DAY COMPLETED (Checked Out)
   if (checkedOut) {
     return (
-      <div className="flex items-center gap-2 h-8 px-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-[11px] font-bold dark:border-[#262b31] dark:bg-[#15181d] dark:text-slate-300 shadow-2xs">
-        <Check size={14} className="text-emerald-600" />
-        <span className="tabular-nums">In: {checkInAt}</span>
-        <span className="text-slate-300 dark:text-slate-600">·</span>
-        <span className="tabular-nums">Out: {checkOutAt}</span>
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 h-8 px-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-[11px] font-bold dark:border-[#262b31] dark:bg-[#15181d] dark:text-slate-300 shadow-2xs">
+          <Check size={14} className="text-emerald-600" />
+          <span className="tabular-nums">In: {checkInAt}</span>
+          <span className="text-slate-300 dark:text-slate-600">·</span>
+          <span className="tabular-nums">Out: {checkOutAt}</span>
+        </div>
       </div>
     )
   }
@@ -209,7 +201,7 @@ export default function PunchWidget() {
               {availability.isOvertime
                 ? `OT +${availability.overtimeMinutes}m`
                 : availability.isEarlyDeparture
-                ? `Ends ${config.checkOutEndTime || '19:00'} (${getWorkEndDisplay()})`
+                ? `Ends ${config.checkOutEndTime || '19:00'} (${getWorkEndDisplay(config)})`
                 : 'Shift Active'}
             </span>
           </div>
@@ -218,7 +210,7 @@ export default function PunchWidget() {
             type="button"
             onClick={handleCheckOut}
             disabled={busy}
-            title={`Check Out — Opens at ${config.checkOutStartTime} (${getWorkEndDisplay()})`}
+            title={`Check Out — Opens at ${config.checkOutStartTime} (${getWorkEndDisplay(config)})`}
             className="h-8 px-3.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
             {busy ? <Loader2 size={13} className="animate-spin" /> : <LogOut size={13} />}
@@ -250,12 +242,12 @@ export default function PunchWidget() {
       <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1 shadow-2xs dark:border-[#262b31] dark:bg-[#15181d]">
         <div className="hidden sm:flex flex-col items-end text-[10px] leading-tight select-none">
           <span className="font-bold text-slate-800 dark:text-slate-200 tabular-nums">
-            Shift {config.checkInStartTime || '08:00'} ({getWorkStartDisplay()})
+            Shift {config.checkInStartTime || '08:00'} ({getWorkStartDisplay(config)})
           </span>
           <span className={canCheckIn ? (availability.isLate ? 'text-amber-600 dark:text-amber-400 font-semibold' : 'text-emerald-600 dark:text-emerald-400 font-semibold') : 'text-slate-400 dark:text-slate-500'}>
             {canCheckIn
               ? availability.isLate
-                ? `Late +${availability.lateMinutes}m`
+                ? `Late +${((availability.lateMinutes || 0) / 60).toFixed(1)}h`
                 : 'Check-In Open'
               : `Opens at ${config.checkInStartTime || '08:00'}`}
           </span>
@@ -266,7 +258,7 @@ export default function PunchWidget() {
             type="button"
             onClick={handleCheckIn}
             disabled={busy}
-            title={`Check In — On-time until ${config.requiredCheckInTime || '08:30'} (${getCheckInCutoffDisplay()})`}
+            title={`Check In — On-time until ${config.requiredCheckInTime || '08:30'} (${getCheckInCutoffDisplay(config)})`}
             className="h-8 px-3.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
             {busy ? <Loader2 size={13} className="animate-spin" /> : <LogIn size={13} />}
@@ -276,7 +268,7 @@ export default function PunchWidget() {
           <button
             type="button"
             disabled
-            title={`Check-in opens at ${config.checkInStartTime || '08:00'} (${getWorkStartDisplay()}) — ${remainingTo(availability.checkInStart, minutes)} to go`}
+            title={`Check-in opens at ${config.checkInStartTime || '08:00'} (${getWorkStartDisplay(config)}) — ${remainingTo(availability.checkInStart, minutes)} to go`}
             className="h-8 px-3 rounded-lg border border-slate-200 bg-slate-100 dark:border-[#33383f] dark:bg-[#1c2026] text-slate-400 dark:text-slate-500 text-[11px] font-semibold flex items-center gap-1.5 cursor-not-allowed"
           >
             <Lock size={12} />

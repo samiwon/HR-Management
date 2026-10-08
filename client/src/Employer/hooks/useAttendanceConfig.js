@@ -7,15 +7,29 @@
 // to be cached when the component last mounted.
 // ─────────────────────────────────────────────────────────────
 
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 
 import {
   getAttendanceConfig,
   subscribeAttendanceConfig,
+  applyPunchStatus,
 } from '../lib/workTime'
+import { fetchPunchStatusApi, fetchAttendanceConfigApi } from '../lib/punchApi'
 
 // The whole attendance configuration (schedule + geofence).
 export function useAttendanceConfig() {
+  useEffect(() => {
+    fetchPunchStatusApi()
+      .then(applyPunchStatus)
+      .catch(() => {
+        fetchAttendanceConfigApi()
+          .then((cfg) => {
+            if (cfg) applyPunchStatus({ attendanceConfig: cfg })
+          })
+          .catch(() => {})
+      })
+  }, [])
+
   return useSyncExternalStore(
     subscribeAttendanceConfig,
     getAttendanceConfig,

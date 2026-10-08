@@ -35,7 +35,7 @@ import AddEmployeeModal from '../../HR-Manager/components/AddEmployeeModal'
 import LuxuryDataTable from '../components/LuxuryDataTable'
 import { resolveEmployee, getCurrentUser } from '../lib/currentUser'
 import { attendanceTotals } from '../lib/attendanceUtils'
-import { fetchEmployees, createEmployee, fetchAttendance, fetchLeaveRequests, fetchPayrollRecords } from '../lib/employerApi'
+import { fetchEmployees, createEmployee, fetchAttendance, fetchLeaveRequests, fetchPayrollRecords, createLeaveRequest } from '../lib/employerApi'
 import useRealtimeRefetch from '../hooks/useRealtimeRefetch'
 
 function Dashboard() {
@@ -68,7 +68,7 @@ function Dashboard() {
           setPayrollRecords(records)
         }
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
@@ -117,7 +117,9 @@ function Dashboard() {
       leaveRequests.filter(
         (r) =>
           r.employeeId === currentEmployee.id ||
-          r.businessId === currentEmployee.employeeId
+          r.employeeId === currentEmployee.employeeId ||
+          r.businessId === currentEmployee.employeeId ||
+          (r.employeeName && currentEmployee.name && r.employeeName.toLowerCase() === currentEmployee.name.toLowerCase())
       ),
     [leaveRequests, currentEmployee.id, currentEmployee.employeeId]
   )
@@ -635,13 +637,12 @@ function Dashboard() {
             align: 'center',
             render: (r) => (
               <span
-                className={`text-[10px] font-bold ${
-                  r.approvalStatus === 'Approved'
+                className={`text-[10px] font-bold ${r.approvalStatus === 'Approved'
                     ? 'text-emerald-700 dark:text-emerald-400'
                     : r.approvalStatus === 'Pending'
-                    ? 'text-amber-700 dark:text-amber-400'
-                    : 'text-rose-700 dark:text-rose-400'
-                }`}
+                      ? 'text-amber-700 dark:text-amber-400'
+                      : 'text-rose-700 dark:text-rose-400'
+                  }`}
               >
                 {r.approvalStatus}
               </span>
@@ -654,9 +655,39 @@ function Dashboard() {
       <ApplyLeaveModal
         isOpen={isLeaveModalOpen}
         onClose={() => setIsLeaveModalOpen(false)}
-        onApply={(newReq) => {
+        onApply={async (newReq) => {
+          try {
+            const result = await createLeaveRequest({
+              employeeId: currentEmployee.id || currentEmployee.employeeId,
+              leaveType: newReq.leaveType,
+              startDate: newReq.startDate,
+              endDate: newReq.endDate,
+              remarks: newReq.remarks,
+              days: newReq.days,
+              requestDate: newReq.requestDate,
+            })
+            const request = result?.request || result?.leaveRequest || result?.record || result
+            if (request && typeof request === 'object' && request.id) {
+              setLeaveRequests((prev) => {
+                const list = Array.isArray(prev) ? prev : []
+                if (list.some((r) => r.id === request.id)) return list
+                return [request, ...list]
+              })
+            }
+            window.dispatchEvent(new CustomEvent('hr-leave-request-created', { detail: request }))
+            try {
+              localStorage.setItem('hr-leave-request-created', JSON.stringify({ id: request?.id, at: Date.now() }))
+            } catch { }
+            if ('BroadcastChannel' in window) {
+              const channel = new BroadcastChannel('hr-leave-requests')
+              channel.postMessage({ type: 'created', request })
+              channel.close()
+            }
+            showToast('Leave request submitted successfully for approval')
+          } catch (err) {
+            showToast(err.message || 'Failed to submit leave request')
+          }
           setIsLeaveModalOpen(false)
-          showToast('Leave request submitted successfully for approval')
         }}
         employee={currentEmployee}
       />

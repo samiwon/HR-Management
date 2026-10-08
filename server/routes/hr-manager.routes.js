@@ -3,6 +3,7 @@ import { Router } from 'express'
 import {
   getHRSettings,
   updateHRSettings,
+  getDepartmentEmployeeCounts,
 } from '../controllers/hr-settings.controller.js'
 
 import {
@@ -18,6 +19,7 @@ import {
   createEmployee,
   updateEmployee,
   deleteEmployee,
+  restoreEmployee,
   resetEmployeePassword,
 
   getAttendance,
@@ -104,6 +106,11 @@ router.delete(
   deleteEmployee,
 )
 router.post(
+  '/employees/:id/restore',
+  ...requirePermission('employees.edit'),
+  restoreEmployee,
+)
+router.post(
   '/employees/:id/reset-password',
   ...requirePermission('employees.reset_password'),
   resetEmployeePassword,
@@ -131,6 +138,7 @@ router.get(
   getHRSettings,
 )
 router.put('/settings', ...requirePermission('settings.edit'), updateHRSettings)
+router.get('/departments/usage', ...requireAnyHrPermission(), getDepartmentEmployeeCounts)
 
 // ============================================================
 // REPORTS

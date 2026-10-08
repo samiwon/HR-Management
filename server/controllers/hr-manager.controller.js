@@ -55,12 +55,14 @@ function employeeValues(input, current = {}) {
 
 export async function getDashboard(_req, res) {
   try {
-    const [totalEmployees, activeEmployees, employeesOnLeave, departments] = await Promise.all([
-      prisma.employee.count(), prisma.employee.count({ where: { employmentStatus: 'Active' } }),
-      prisma.employee.count({ where: { employmentStatus: 'On Leave' } }),
-      prisma.employee.findMany({ select: { department: true }, distinct: ['department'] }),
+    const [totalEmployees, activeEmployees, employeesOnLeave, departments, archivedEmployees] = await Promise.all([
+      prisma.employee.count({ where: { isArchived: false } }),
+      prisma.employee.count({ where: { employmentStatus: 'Active', isArchived: false } }),
+      prisma.employee.count({ where: { employmentStatus: 'On Leave', isArchived: false } }),
+      prisma.employee.findMany({ where: { isArchived: false }, select: { department: true }, distinct: ['department'] }),
+      prisma.employee.count({ where: { isArchived: true } }),
     ])
-    return res.json({ totalEmployees, activeEmployees, employeesOnLeave, departments: departments.length })
+    return res.json({ totalEmployees, activeEmployees, employeesOnLeave, departments: departments.length, archivedEmployees })
   } catch (error) { return fail(res, error, 'Failed to load HR dashboard') }
 }
 
@@ -199,15 +201,67 @@ export async function deleteEmployee(req, res) {
   try {
     const employee = await prisma.employee.findUnique({ where: { id: req.params.id } })
     if (!employee) return res.status(404).json({ message: 'Employee not found' })
+
+    const terminatedAt = new Date()
+
+    // Soft-delete / Archive the employee: do not permanently delete.
+    // Sets status to 'Terminated', isArchived to true, and preserves all historical records.
     await prisma.$transaction(async (tx) => {
-      await tx.attendance.deleteMany({ where: { employeeId: employee.id } })
-      await tx.leaveRequest.deleteMany({ where: { employeeId: employee.id } })
-      await tx.payrollRecord.deleteMany({ where: { employeeId: employee.id } })
-      await tx.user.deleteMany({ where: { employeeId: employee.id } })
-      await tx.employee.delete({ where: { id: employee.id } })
+      await tx.employee.update({
+        where: { id: employee.id },
+        data: {
+          isArchived: true,
+          archivedAt: terminatedAt,
+          status: 'Terminated',
+          employmentStatus: 'Terminated',
+          exitDate: employee.exitDate || today(),
+        },
+      })
+      await tx.user.updateMany({
+        where: { employeeId: employee.id },
+        data: { isActive: false },
+      })
     })
-    return res.json({ message: 'Employee deleted successfully' })
-  } catch (error) { return fail(res, error, 'Failed to delete employee') }
+
+    return res.json({
+      message: 'Employee terminated and archived successfully. All historical records have been preserved.',
+      archived: true,
+      employeeId: employee.id,
+      status: 'Terminated',
+      isArchived: true,
+      terminatedAt: terminatedAt.toISOString(),
+    })
+  } catch (error) { return fail(res, error, 'Failed to terminate employee') }
+}
+
+export async function restoreEmployee(req, res) {
+  try {
+    const employee = await prisma.employee.findUnique({ where: { id: req.params.id } })
+    if (!employee) return res.status(404).json({ message: 'Employee not found' })
+
+    await prisma.$transaction(async (tx) => {
+      await tx.employee.update({
+        where: { id: employee.id },
+        data: {
+          isArchived: false,
+          archivedAt: null,
+          status: 'Active',
+          employmentStatus: 'Active',
+          exitDate: null,
+        },
+      })
+      await tx.user.updateMany({
+        where: { employeeId: employee.id },
+        data: { isActive: true },
+      })
+    })
+
+    return res.json({
+      message: 'Employee restored successfully.',
+      archived: false,
+      employeeId: employee.id,
+    })
+  } catch (error) { return fail(res, error, 'Failed to restore employee') }
 }
 
 export async function resetEmployeePassword(req, res) {
@@ -349,7 +403,7 @@ export async function acceptLateAttendance(req, res) {
 }
 
 export async function getLeaveRequests(req, res) {
-  try { const where = req.query.employeeId ? { employeeId: req.query.employeeId } : undefined; return res.json(await prisma.leaveRequest.findMany({ where, orderBy: { createdAt: 'desc' } })) }
+  try { const where = req.query.employeeId ? { employeeId: req.query.employeeId } : undefined; return res.json(await prisma.leaveRequest.findMany({ where, include: { employee: true }, orderBy: { createdAt: 'desc' } })) }
   catch (error) { return fail(res, error, 'Failed to load leave requests') }
 }
 export async function getLeaveRequest(req, res) {

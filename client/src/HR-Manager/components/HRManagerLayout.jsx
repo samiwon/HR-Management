@@ -58,14 +58,35 @@ export default function HRManagerLayout() {
   }, [location.pathname, expandedSections, mobileOpen])
 
   const [currentOrg, setCurrentOrg] = useState({
-    name: 'Wishbone Global',
+    name: 'Yanol Technology PLC',
     members: 'HR Manager',
-    code: 'WB',
+    code: 'YT',
   })
 
+  React.useEffect(() => {
+    let active = true
+    const token = localStorage.getItem('token')
+    if (token) {
+      fetch('http://localhost:4000/api/hr-manager/settings', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (!active) return
+          const name = data?.companyInformation?.companyName
+          if (name) {
+            const words = name.trim().split(/\s+/)
+            const code = words.map((w) => w[0]).join('').slice(0, 2).toUpperCase() || 'YT'
+            setCurrentOrg({ name, members: 'HR Manager', code })
+          }
+        })
+        .catch(() => {})
+    }
+    return () => { active = false }
+  }, [])
+
   const organizations = [
-    { name: 'Wishbone Global', members: 'HR Manager', code: 'WB' },
-    { name: 'Yanol Tech PLC', members: 'Employer Portal', code: 'YT' },
+    currentOrg,
   ]
 
   const isRouteActive = (path) => {

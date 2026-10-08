@@ -4,7 +4,7 @@ import { getWorkEndDisplay, getCheckInCutoffDisplay } from '../lib/workTime'
 
 import DailyLogTable from '../../HR-Manager/components/DailyLogTable'
 
-import PunchCard, {
+import {
   EmergencyCheckOutButton,
 } from '../components/PunchCard'
 
@@ -426,10 +426,6 @@ function Attendance() {
         </div>
       ) : (
         <>
-          {/* =================================================
-              LIVE PUNCH CARD & SCHEDULE
-          ================================================= */}
-          <PunchCard />
 
           {/* =================================================
               SUMMARY STATS
@@ -577,11 +573,6 @@ function Attendance() {
 
           </div>
 
-          {/* =================================================
-              PUNCH CARD
-          ================================================= */}
-
-          <PunchCard />
 
           {/* =================================================
               HOURS SUMMARY

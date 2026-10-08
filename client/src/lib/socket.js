@@ -20,7 +20,6 @@ export function connectSocket() {
 
   socket = io(SOCKET_URL, {
     auth: { token },
-    transports: ['websocket', 'polling'],
   })
 
   socket.on('connect_error', (err) => {

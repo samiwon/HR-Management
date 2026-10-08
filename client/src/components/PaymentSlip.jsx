@@ -148,7 +148,7 @@ export default function PaymentSlip({
             <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 block uppercase">Prepared by:</span>
             <div className="h-7 flex items-center justify-start pl-2">
               <span className="font-serif italic font-bold text-xs text-indigo-700 dark:text-indigo-400 tracking-wide rotate-[-3deg] select-none">
-                Kassahun Desta
+                Finance & Payroll
               </span>
             </div>
             <div className="text-[9px] text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-[#262b31] pt-0.5">
@@ -161,11 +161,11 @@ export default function PaymentSlip({
             <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 block uppercase">Approved by:</span>
             <div className="h-7 flex items-center justify-start pl-2">
               <span className="font-serif italic font-bold text-xs text-emerald-700 dark:text-emerald-400 tracking-wide rotate-[2deg] select-none">
-                Sarah Jenkins
+                HR Administration
               </span>
             </div>
             <div className="text-[9px] text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-[#262b31] pt-0.5">
-              Head of HR &amp; Operations · Signed
+              HR Manager · Signed
             </div>
           </div>
         </div>
@@ -176,7 +176,7 @@ export default function PaymentSlip({
             <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 block uppercase">Employee Sign.:</span>
             <div className="h-7 flex items-center justify-start pl-2">
               <span className="font-serif italic text-xs text-gray-700 dark:text-gray-300 rotate-[-1deg] select-none">
-                {empInitial} Solomon M.
+                {employee?.name || 'Employee Signature'}
               </span>
             </div>
             <div className="text-[9px] text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-[#262b31] pt-0.5">
