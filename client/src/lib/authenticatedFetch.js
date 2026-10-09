@@ -71,24 +71,34 @@ export function installAuthenticatedFetch() {
     const token = getToken()
     const options = init || {}
 
+    const handleResponse = (res) => {
+      if (res.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        localStorage.removeItem('user')
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
+      }
+      return res
+    }
+
     if (!token || !isOwnApi(resolveTarget(input))) {
-      return nativeFetch(input, options)
+      return nativeFetch(input, options).then(handleResponse)
     }
 
     // A Request instance carries its own headers; clone it so the caller's
     // object is not mutated.
     if (typeof Request !== 'undefined' && input instanceof Request) {
-      if (input.headers.has('Authorization')) return nativeFetch(input, options)
+      if (input.headers.has('Authorization')) return nativeFetch(input, options).then(handleResponse)
       const request = input.clone()
       request.headers.set('Authorization', `Bearer ${token}`)
-      return nativeFetch(request, options)
+      return nativeFetch(request, options).then(handleResponse)
     }
 
     const headers = new Headers(options.headers || {})
-    if (headers.has('Authorization')) return nativeFetch(input, options)
+    if (headers.has('Authorization')) return nativeFetch(input, options).then(handleResponse)
 
     headers.set('Authorization', `Bearer ${token}`)
-    return nativeFetch(input, { ...options, headers })
+    return nativeFetch(input, { ...options, headers }).then(handleResponse)
   }
 
   window.__authenticatedFetchInstalled = true
